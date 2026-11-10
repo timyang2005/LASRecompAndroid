@@ -1763,12 +1763,13 @@ extern "C" void launcher_run(const char *root) {
         const float s_small = 30 * (b2 ? 1.75f : 1), s_menu = 52 * (b2 ? 1.85f : 1), s_title = 92 * (b2 ? 2.3f : 1);
         // Baloo 2 has no CJK glyphs: merge the phone's font right after each main font (ImGui's MergeMode attaches
         // to the previously added one). No CJK font on the device -> English / Portuguese still work unchanged.
+        // The 211.6 px title is left alone: it draws "LAS Recompiled", English only, and merging ~1.3k glyphs at
+        // that size is what used to take the atlas to 4096x32768 (font_cjk.h, SIZE CAP).
         g_font_small = io.Fonts->AddFontFromFileTTF(p, s_small, NULL, ranges);
         ui_merge_cjk_font(io.Fonts, s_small);
         g_font_menu = io.Fonts->AddFontFromFileTTF(p, s_menu, NULL, ranges);
         ui_merge_cjk_font(io.Fonts, s_menu);
         g_font_title = io.Fonts->AddFontFromFileTTF(p, s_title, NULL, ranges);
-        ui_merge_cjk_font(io.Fonts, s_title);
     }
     if (!g_font_menu) g_font_small = g_font_menu = g_font_title = io.Fonts->AddFontDefault();
     ImGuiStyle &st = ImGui::GetStyle();

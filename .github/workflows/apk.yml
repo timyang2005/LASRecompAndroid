@@ -18,6 +18,10 @@ on:
     paths:
       - '.github/workflows/apk.yml'
       - 'android/lasrecomp/ci/**'
+      - 'android/lasrecomp/app/build.gradle.kts'
+      - 'runtime/**'
+      - 'third_party/**'
+      - 'tools/**'
   # 手动触发：工作流在默认分支时可用 UI 的 "Run workflow"，否则用 REST API 指定 ref
   workflow_dispatch:
     inputs:
