@@ -7,6 +7,12 @@ project(lasrecomp C CXX ASM)
 set(R ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)   # the repository
 get_filename_component(R ${R} ABSOLUTE)
 set(DEPS ${R}/android/deps/out)                        # android/deps/build_deps.sh
+# How the CJK font is merged into the ImGui faces (runtime/ui/font_cjk.h): 0 none, 1 normal, 2 one small size only.
+# The Gradle build passes -DLAS_CJK_MODE from -PlasCjkMode (used by .github/workflows/apk-diag.yml to bisect a crash).
+if(NOT DEFINED LAS_CJK_MODE)
+    set(LAS_CJK_MODE 1)
+endif()
+message(STATUS "LAS_CJK_MODE ${LAS_CJK_MODE}")
 if(NOT EXISTS ${DEPS}/lib/libSDL3.so)
     message(FATAL_ERROR "run android/deps/build_deps.sh first")
 endif()
@@ -80,7 +86,8 @@ target_include_directories(main PRIVATE ${R}/runtime ${R}/runtime/nvn ${IMGUI} $
                            ${CMAKE_BINARY_DIR}/inc)
 target_compile_definitions(main PRIVATE
     VK_NO_PROTOTYPES VK_USE_PLATFORM_ANDROID_KHR IMGUI_IMPL_VULKAN_USE_VOLK   # Vulkan from the loaded driver (volk)
-    VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=1)
+    VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=1
+    LAS_CJK_MODE=${LAS_CJK_MODE})  # (runtime/ui/font_cjk.h: 0 no merge, 1 normal, 2 one small size; see apk-diag.yml)
 if(LAS_APP_VERSION)  # (the app's versionName, from build.gradle.kts: the start screen's lower right)
     target_compile_definitions(main PRIVATE LAS_APP_VERSION="${LAS_APP_VERSION}")
 endif()

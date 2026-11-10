@@ -39,6 +39,14 @@
 // Chinese above this height is rasterised at this height and scaled up by ImGui (per-font SizePixels).
 static const float CJK_MAX_PX = 80.0f;
 
+// How the merge is done, from the build (-DLAS_CJK_MODE, build.gradle.kts -PlasCjkMode):
+//   0  never merge  - the Chinese tables still translate, the text draws as boxes (bisect: is it the font at all?)
+//   1  normal       - see SIZE CAP
+//   2  one size     - only faces up to 60 px, rasterised at 40 px (bisect: is it the atlas size?)
+#ifndef LAS_CJK_MODE
+#define LAS_CJK_MODE 1
+#endif
+
 #if defined(__ANDROID__)
 // The font file and the exact glyph ranges, loaded once (the start screen's callbacks run on Java's threads).
 struct UiCjkFont {
@@ -110,14 +118,20 @@ inline UiCjkFont &ui_cjk_font(void) {
 #endif
 
 inline void ui_merge_cjk_font(ImFontAtlas *atlas, float size) {
-#ifndef __ANDROID__
-    (void)atlas; (void)size;
+#if !defined(__ANDROID__) || LAS_CJK_MODE == 0
+    (void)atlas; (void)size;  // (no Android / bisect build: translate, but never touch the atlas)
 #else
     UiCjkFont &f = ui_cjk_font();
     if (f.bytes.empty() || f.ranges.Size < 3) return;
     if (atlas->Fonts.Size == 0) return;  // (MergeMode attaches to the previous font: none yet, nothing to attach to)
 
-    const float s = size > CJK_MAX_PX ? CJK_MAX_PX : size;  // (see the SIZE CAP note above)
+#if LAS_CJK_MODE == 2
+    if (size > 60.0f) return;  // (bisect build: one small face only)
+    const float cap = 40.0f;
+#else
+    const float cap = CJK_MAX_PX;
+#endif
+    const float s = size > cap ? cap : size;  // (see the SIZE CAP note above)
     ImFontConfig cfg;
     cfg.MergeMode = true;
     cfg.OversampleH = 1;   // (no horizontal oversampling: 1.3k glyphs would triple the atlas width)

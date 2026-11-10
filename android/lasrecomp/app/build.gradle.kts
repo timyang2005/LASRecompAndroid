@@ -6,6 +6,7 @@ plugins {
 }
 
 val repo: File = rootDir.resolve("../..").canonicalFile
+val lasCjkMode: String = (project.findProperty("lasCjkMode") as String?) ?: "1"  // (see defaultConfig)
 val deps: File = repo.resolve("android/deps/out")  // android/deps/build_deps.sh
 val gen = layout.buildDirectory.dir("generated/lasrecomp")
 // The release key: outside the repository, in ~/.lasrecomp/keystore.properties (storeFile, storePassword, keyAlias,
@@ -22,7 +23,9 @@ android {
         minSdk = 30
         targetSdk = 36
         versionCode = 27
-        versionName = "0.5.10-zh4"
+        // -PlasCjkMode bisects a crash in the CJK font merge (runtime/ui/font_cjk.h, apk-diag.yml):
+        // 0 = translate but never merge, 2 = one small face, 1 (default) = normal.
+        versionName = "0.5.10" + when (lasCjkMode) { "0" -> "-zh5a"; "2" -> "-zh5b"; else -> "-zh4" }
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -30,6 +33,7 @@ android {
             cmake {
                 arguments += "-DLAS_GEN_DIR=${gen.get().asFile.resolve("inc").absolutePath.replace('\\', '/')}"
                 arguments += "-DLAS_APP_VERSION=$versionName"  // (the start screen shows it: launcher.mm)
+                arguments += "-DLAS_CJK_MODE=$lasCjkMode"
             }
         }
     }

@@ -1,0 +1,174 @@
+# 崩溃二分：对照包能跑、汉化包崩，问题在汉化改动里。这里一次构建两个变体，把范围压到一个：
+#
+#   a) -PlasCjkMode=0  中文翻译照常，但**完全不合并** CJK 字体（中文显示成方块）
+#      -> 能跑：问题在字体合并（图集/显存/字体解析）
+#      -> 也崩：问题不在字体，在 tr() / settings 的语言探测
+#   b) -PlasCjkMode=2  只合并一个小字号（<=60 px 的 face，按 40 px 光栅化），图集缩到几 MB
+#      -> 只有 a 能跑、b 崩：就是图集大小
+#      -> a、b 都能跑：之前的 32 MB 仍然太大
+#
+# 两个包都与 release 包同签名，可直接覆盖安装；启动屏右下角显示版本号（-zh5a / -zh5b）。
+name: Android APK (diagnostic, cjk bisect)
+
+on:
+  push:
+    branches: [feat/zh-launcher]
+    paths:
+      - '.github/workflows/apk-diag.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-diag
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      max-parallel: 2
+      matrix:
+        mode: ['0', '2']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL /usr/local/lib/android/sdk/ndk || true
+          df -h /
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 Android SDK / NDK / CMake
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || { echo "::error::sdkmanager 不存在：$SDKM"; exit 1; }
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install 'platforms;android-36' 'build-tools;36.0.0' 'cmake;3.30.4' 'ndk;30.0.16248370'
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build zip unzip
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_LINUX=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "$SDK/cmake/3.30.4/bin" >> "$GITHUB_PATH"
+
+      - name: local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/lasrecomp/local.properties
+
+      - name: 缓存原生依赖
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            android/deps/src
+            android/deps/out
+          key: deps-${{ runner.os }}-${{ hashFiles('android/deps/*.sh') }}
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/lasrecomp/**/*.gradle.kts', 'android/lasrecomp/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 原生依赖（必需）
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            if bash android/deps/build_deps.sh; then exit 0; fi
+            echo "::warning::build_deps.sh 第 $i 次失败，20 秒后重试"
+            sleep 20
+          done
+          echo "::error::build_deps.sh 三次失败"; exit 1
+
+      - name: FFmpeg
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/lib/libavformat.so ]; then echo '已有 FFmpeg，跳过'; exit 0; fi
+          bash android/deps/build_ffmpeg.sh
+
+      - name: 手机端游戏代码构建器（Python / zig）
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/gen/zig/libzig.so ]; then echo '已有 on-device builder，跳过'; exit 0; fi
+          bash android/deps/build_gen_deps.sh
+
+      - name: 写入固定签名
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.lasrecomp"
+          cat > "$HOME/.lasrecomp/keystore.properties" <<EOF
+          storeFile=$GITHUB_WORKSPACE/android/lasrecomp/ci/lasrecomp-release.jks
+          storePassword=lasrecomp
+          keyAlias=lasrecomp
+          keyPassword=lasrecomp
+          EOF
+
+      - name: 编译（LAS_CJK_MODE=${{ matrix.mode }}）
+        working-directory: android/lasrecomp
+        run: bash ./gradlew --no-daemon assembleRelease -PlasCjkMode=${{ matrix.mode }}
+
+      - name: 校验并整理
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=android/lasrecomp/app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "::error::APK 未生成：$APK"; exit 1; }
+          APKSIGNER=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > /tmp/sign.txt
+          grep -E 'certificate SHA-256 digest|Verified using' /tmp/sign.txt
+          FP=$(awk -F'SHA-256 digest: ' '/certificate SHA-256 digest/{gsub(/:|[[:space:]]/,"",$2); print tolower($2); exit}' /tmp/sign.txt)
+          [ "$FP" = "f00f7ebe8bb0d960a74399db2d4a8fba5fe13d5448dd2a662c945a896a2f4cff" ] || {
+            echo "::error::签名证书不匹配：$FP"; exit 1; }
+          VERSION=$(python3 -c 'import json; print(json.load(open("android/lasrecomp/app/build/outputs/apk/release/output-metadata.json"))["elements"][0].get("versionName") or "ci")')
+          echo "versionName=$VERSION"
+          mkdir -p dist
+          cp "$APK" "dist/LASRecomp-${VERSION}-cjk${{ matrix.mode }}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LASRecomp-cjk${{ matrix.mode }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 发布为直链
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG=apk-diag-${{ matrix.mode }}
+          if [ "${{ matrix.mode }}" = "0" ]; then
+            BODY="二分 A（LAS_CJK_MODE=0）：中文翻译照常，但完全不合并 CJK 字体，中文会显示成方块。"
+          else
+            BODY="二分 B（LAS_CJK_MODE=2）：只合并一个小字号（<=60 px，按 40 px 光栅化），图集缩到几 MB。"
+          fi
+          NOTES="$BODY"$'\n\n'"签名与汉化包相同，可直接覆盖安装。启动屏右下角版本号应显示 ${{ steps.apk.outputs.version }}。"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" --prerelease --title "二分包 cjk${{ matrix.mode }}" --notes "$NOTES" dist/*
+          fi
+          echo "::notice::https://github.com/$GH_REPO/releases/download/$TAG/LASRecomp-${{ steps.apk.outputs.version }}-cjk${{ matrix.mode }}.apk"

@@ -1623,7 +1623,9 @@ void ui_window_init(void) {
 #ifdef __ANDROID__
     {   // Driver compatibility (the start screen's Saves & files tab): applied before the driver loads
         extern void android_log_file(bool on);
-        android_log_file(g_settings.log_file);
+        // (Android, always: a crash before the settings are reachable would otherwise leave nothing behind; the file is
+        // <data>/lasrecomp.log and the previous run's is renamed lasrecomp-previous.log on the next start)
+        android_log_file(true);
         // Turnip reads TU_DEBUG once, when it starts: low-resolution Z off (it can drop draws on some Adreno GPUs).
         // Automatic needs the GPU before Vulkan names it: the kernel's (the GPU driver reads it from the app too), else
         // the last start's; unknown: on.
