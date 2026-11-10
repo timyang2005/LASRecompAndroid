@@ -58,46 +58,55 @@ const char *const g_language_names[N_LANGUAGES] = {"Auto", "Japanese", "English"
                                                    "Italian", "Dutch", "Russian", "Korean", "Chinese (Simplified)",
                                                    "Chinese (Traditional)"};
 
-int settings_host_language(void) {
-#ifdef __ANDROID__
-    static int lang = -1;
-    if (lang < 0) {
-        static const char *const codes[] = {"es", "fr", "de", "it", "nl"};
+// The app's own menu languages (the game's text languages above are a different setting altogether).
+const char *const g_ui_language_names[N_UI_LANGUAGES] = {"Auto", "English", "Português (Brasil)", "Español",
+                                                        "Français", "Deutsch", "Italiano", "Nederlands",
+                                                        "简体中文", "繁體中文"};
+
+// The language runtime/ui/i18n.mm looks up. A manual choice wins; Auto follows the phone's first preferred
+// locale through SDL. zh -> simplified, except TW / HK / MO -> traditional. LARECOMP_HOST_LANG overrides it
+// (pt|en|es|fr|de|it|nl|zh|zh-TW|... for tests). Desktop builds have no translated menus: English.
+int settings_ui_language(void) {
+#ifndef __ANDROID__
+    return UI_LANG_EN;
+#else
+    if (g_settings.ui_language > UI_LANG_AUTO && g_settings.ui_language < N_UI_LANGUAGES)
+        return g_settings.ui_language;
+    static int sys = -1;
+    if (sys < 0) {
+        sys = UI_LANG_EN;
         const char *e = getenv("LARECOMP_HOST_LANG"), *code = e && *e ? e : NULL;
+        const char *country = NULL;
         SDL_Locale **l = NULL;
-        if (!code) {  // (the phone's first preferred language, through SDL)
+        if (!code) {
             int n = 0;
             l = SDL_GetPreferredLocales(&n);
-            code = l && n > 0 ? l[0]->language : NULL;
+            if (l && n > 0) { code = l[0]->language; country = l[0]->country; }
+        } else {
+            const char *q = strpbrk(code, "-_");  // zh-TW / zh_TW / zh-HK / zh-MO
+            if (q) country = q + 1;
         }
-        lang = 0;
-        for (int i = 0; i < 5 && code; i++)
-            if (!strncmp(code, codes[i], 2)) lang = i + 1;
+        if (code && !strncmp(code, "zh", 2)) {
+            sys = country && (!strncmp(country, "TW", 2) || !strncmp(country, "HK", 2) || !strncmp(country, "MO", 2))
+                  ? UI_LANG_ZH_HANT : UI_LANG_ZH_HANS;
+        } else if (code) {
+            static const struct { const char *code; int lang; } map[] = {
+                {"pt", UI_LANG_PT_BR}, {"es", UI_LANG_ES}, {"fr", UI_LANG_FR},
+                {"de", UI_LANG_DE}, {"it", UI_LANG_IT}, {"nl", UI_LANG_NL}};
+            for (size_t i = 0; i < sizeof map / sizeof map[0]; i++)
+                if (!strncmp(code, map[i].code, 2)) sys = map[i].lang;
+        }
         SDL_free(l);
     }
-    return lang;
-#else
-    return 0;
+    return sys;
 #endif
 }
 
-bool settings_host_portuguese(void) {
-#ifdef __ANDROID__
-    static int pt = -1;
-    if (pt < 0) {
-        const char *e = getenv("LARECOMP_HOST_LANG");
-        if (e && *e) pt = !strncmp(e, "pt", 2);
-        else {  // (the phone's first preferred language, through SDL)
-            int n = 0;
-            SDL_Locale **l = SDL_GetPreferredLocales(&n);
-            pt = l && n > 0 && l[0]->language && !strcmp(l[0]->language, "pt");
-            SDL_free(l);
-        }
-    }
-    return pt;
-#else
-    return false;
-#endif
+// Both kept for the old i18n.mm's API; one language decision, no second locale read.
+bool settings_host_portuguese(void) { return settings_ui_language() == UI_LANG_PT_BR; }
+int settings_host_language(void) {
+    int ui = settings_ui_language();
+    return ui >= UI_LANG_ES && ui <= UI_LANG_NL ? ui - UI_LANG_ES + 1 : 0;  // 1 es .. 5 nl
 }
 
 // LANG_AUTO: the host's own language (LANG=es_ES.UTF-8 -> es), en-US when it is none of the game's. Linux only:
@@ -235,6 +244,10 @@ void settings_load(void) {
             for (int i = 1; i < N_LANGUAGES; i++)
                 if (!strcmp(val, g_language_codes[i])) g_settings.language = i;
         }
+        else if (!strcmp(key, "ui_language")) {  // the app's own menus (UI_LANG_*); anything out of range: Auto
+            int n = atoi(val);
+            g_settings.ui_language = n > UI_LANG_AUTO && n < N_UI_LANGUAGES ? n : UI_LANG_AUTO;
+        }
         else if (!strcmp(key, "tracker")) g_settings.tracker = atoi(val) != 0;
         else if (!strcmp(key, "menu_tip_seen")) g_settings.menu_tip_seen = atoi(val) != 0, tip_key = true;
         else if (!strcmp(key, "aspect_asked")) g_settings.aspect_asked = atoi(val) != 0, aspect_key = true;
@@ -324,6 +337,7 @@ void settings_save(void) {
     fprintf(f, "mirror_mode = %d\n", g_settings.mirror_mode);
     fprintf(f, "language = %s\n", g_language_codes[g_settings.language > LANG_AUTO && g_settings.language < N_LANGUAGES
                                                      ? g_settings.language : LANG_AUTO]);
+    fprintf(f, "ui_language = %d\n", g_settings.ui_language);
     fprintf(f, "tracker = %d\n", g_settings.tracker);
     fprintf(f, "aspect_asked = %d\n", g_settings.aspect_asked);
     fprintf(f, "menu_tip_seen = %d\n", g_settings.menu_tip_seen);

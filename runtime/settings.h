@@ -23,6 +23,14 @@ enum { LANG_AUTO = 0, N_LANGUAGES = 12 };
 extern const char *const g_language_codes[N_LANGUAGES];  // what the game is told: "ja", "en-US", "es", ...
 extern const char *const g_language_names[N_LANGUAGES];  // for the menu ("Auto", "Japanese", ..., "Spanish")
 
+// The app's own menus (runtime/ui/i18n.mm), entirely separate from the game's text language above. UI_LANG_AUTO
+// follows the phone's first preferred locale; a manual choice is saved in larecomp.ini as ui_language.
+enum {
+    UI_LANG_AUTO = 0, UI_LANG_EN = 1, UI_LANG_PT_BR = 2, UI_LANG_ES = 3, UI_LANG_FR = 4, UI_LANG_DE = 5,
+    UI_LANG_IT = 6, UI_LANG_NL = 7, UI_LANG_ZH_HANS = 8, UI_LANG_ZH_HANT = 9, N_UI_LANGUAGES = 10
+};
+extern const char *const g_ui_language_names[N_UI_LANGUAGES];  // for the menu ("Auto", "English", ..., "繁體中文")
+
 typedef struct {
     int aspect;          // ASPECT_*: unlocked = fill the window (wider/taller views), original = 16:9 with bars
     bool fullscreen;
@@ -66,6 +74,7 @@ typedef struct {
     bool hide_hero_icon; // no Hero Mode icon on the HUD
     bool mirror_mode;    // the world mirrored left to right (Gameplay tab): renderers + runtime/hle/input.c
     int language;        // LANG_AUTO or an index into g_language_codes: the game's text language
+    int ui_language;     // UI_LANG_*: the app's own menus (i18n.mm). UI_LANG_AUTO = follow the phone's language
     int prompts;         // PROMPTS_*: button glyphs (auto = follow the controller SDL reports): runtime/nvn/texpatch.c
     bool inv_keys;       // randomizer: show every dungeon's keys on the pause menu's Items page
     bool tracker;        // randomizer: check tracker on the pause menu's Map page
@@ -103,7 +112,10 @@ const char *settings_game_language(void);  // settings_language as the game is t
 #endif
 // That code's name for the menu ("Spanish")
 const char *settings_language_name(void);
-// Android: the phone's language is Portuguese (the menus' own text: ui/i18n.mm). LARECOMP_HOST_LANG=pt|en (tests)
+// (Android) the language the app's own menus are drawn in: the ui_language setting, or the phone's for Auto.
+// Desktop builds stay English. LARECOMP_HOST_LANG=pt|en|es|fr|de|it|nl|zh|zh-TW|... overrides the locale (tests).
+int settings_ui_language(void);
+// Kept for compatibility with the old i18n.mm; both now follow settings_ui_language().
 bool settings_host_portuguese(void);
-// (Android) the phone's language among the menus' others: 0 none, 1 Spanish, 2 French, 3 German, 4 Italian, 5 Dutch
+// 0 none, 1 Spanish, 2 French, 3 German, 4 Italian, 5 Dutch
 int settings_host_language(void);
