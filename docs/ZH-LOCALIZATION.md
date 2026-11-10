@@ -17,7 +17,9 @@ Language 选项控制，与界面语言是两套独立的设置。
 | `runtime/ui/inventory_overlay.mm` | 同伴卡片里 3 处直接 `AddText` 的英文（Companion / Choose / kShort[]）改为走 `tr()` |
 | `res/values-zh-rCN/strings.xml` / `values-zh-rTW/strings.xml` | 新增。Java 弹窗、快捷方式、通知渠道共 14 条 |
 | `tools/i18n_check.py` | 新增。键对齐 / 重复键 / 格式符 / UTF-8 + **双基准覆盖率**（葡语表键 ∪ 源码 `tr()` 实际查表键） |
-| `.github/workflows/i18n.yml` | 新增。push/PR 跑校验；手动触发可打 APK |
+| `.github/workflows/i18n.yml` | 新增。push/PR 跑中文表静态校验（不构建 APK） |
+| `.github/workflows/apk.yml` | 新增。编译并用固定密钥签名 release APK，详见 `docs/CI-APK.md` |
+| `android/lasrecomp/ci/lasrecomp-release.jks` | 新增。CI 固定签名密钥（公开、仅用于自测） |
 
 `main` 保持为上游 `mamcjr/LASRecompAndroid` 的纯镜像，所有改动都在 `feat/zh-launcher`，便于后续 rebase 上游更新。
 
@@ -100,8 +102,9 @@ python3 tools/i18n_check.py --missing-out /tmp/missing.txt
 ## 构建与 CI
 
 APK 需要 Windows Git Bash 或 Linux + Android SDK：**NDK `30.0.16248370`、CMake `3.30.4`、Python 3.12**，步骤见
-README 的 *Building from source*（`android/deps/build_deps.sh` 等）。CI 中 `i18n` 任务在 ubuntu-latest 上跑静态校验，
-必定可用；`apk` 任务仅 `workflow_dispatch` 手动触发，Linux 上的原生依赖构建未经上游验证。
+README 的 *Building from source*（`android/deps/build_deps.sh` 等）。CI 拆成两个工作流：`i18n.yml` 在 ubuntu-latest
+上跑中文表静态校验（必定可用）；`apk.yml` 编译并用**固定密钥**签名 release APK，产物可直接安装、可覆盖升级，
+详见 [`docs/CI-APK.md`](CI-APK.md)。
 
 ## 已知限制
 

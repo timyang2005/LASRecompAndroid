@@ -1,6 +1,7 @@
-# 启动器中文化的静态校验 + 可选的 APK 构建。
+# 启动器中文化的静态校验（键对齐、格式符、覆盖率、UTF-8）。
+# APK 的编译与固定签名在 .github/workflows/apk.yml，本文件不重复构建。
 # 上游 mamcjr/LASRecompAndroid 没有 workflows；本文件只覆盖本 fork 的汉化分支产物。
-name: i18n / APK
+name: i18n
 
 on:
   push:
@@ -28,32 +29,3 @@ jobs:
           python-version: '3.11'
       - name: 校验简繁中文表
         run: python3 tools/i18n_check.py
-
-  # 手动触发：按 README 的构建说明装 SDK/NDK 后打 release APK。Linux 上未经上游验证，
-  # 若 build_deps.sh 依赖 Git Bash / WSL，请改用自托管 Windows runner 或本地构建。
-  apk:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: 安装 NDK / CMake（版本与 app/build.gradle.kts 一致）
-        run: |
-          sdkmanager --install "ndk;30.0.16248370" "cmake;3.30.4" "platforms;android-36" "build-tools;36.0.0"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-      - name: 构建原生依赖
-        run: bash android/deps/build_deps.sh
-      - name: 编译 APK
-        run: |
-          cd android/lasrecomp
-          ./gradlew assembleRelease --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LASRecomp-zh-release
-          path: android/lasrecomp/app/build/outputs/apk/release/*.apk

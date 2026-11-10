@@ -22,3 +22,9 @@ __pycache__/
 
 # test captures (screenshots, videos from testers)
 testes/
+
+# Android native deps made by android/deps/*.sh (large, machine-specific)
+/android/deps/src/
+/android/deps/out/
+/android/deps/work/
+/android/lasrecomp/local.properties
