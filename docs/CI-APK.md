@@ -110,9 +110,17 @@ adb install -r LASRecomp-zh-latest.apk   # 覆盖安装不会丢存档
 
 工作流末尾的「校验签名并整理产物」会：
 
-1. `apksigner verify --verbose --print-certs`，要求 v2 签名为 `true`；
-2. 提取 `Signer #1 certificate SHA-256 digest`，与 `EXPECTED_CERT_SHA256` 比对；
+1. `apksigner verify --verbose --print-certs`，要求 v2（或 v3）签名为 `true`；
+2. 提取 `certificate SHA-256 digest`，去掉可能存在的冒号与空白后转小写，
+   与 `EXPECTED_CERT_SHA256` 比对；
 3. 生成 `sha256sum` 与 `signature.txt` 一起上传。
+
+> **apksigner 输出格式不统一**：build-tools 36 的 verbose 输出是
+> `V2 Signer: certificate SHA-256 digest: …`，旧版则是
+> `Signer #1 certificate SHA-256 digest: …`。校验脚本只锚定
+> `certificate SHA-256 digest` 字段本身，不依赖前缀。若按旧格式硬匹配，
+> 指纹会提取为空并误判为签名失败——首次构建就踩过这个坑：APK 其实已正确签名
+> （证书指纹、v2 都对），但 job 被判失败，Artifact 与 Release 都没有上传。
 
 本地复核：
 
