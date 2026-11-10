@@ -22,6 +22,7 @@
 #include <atomic>
 
 #include "i18n.h"
+#include "font_cjk.h"
 #include "imgui.h"
 #include "imgui_internal.h"  // (SetKeyOwner)
 #include "option_rows.h"
@@ -1759,9 +1760,15 @@ extern "C" void launcher_run(const char *root) {
     for (const char *p : fonts) {
         if (g_font_menu || !*p || !file_exists(p)) continue;
         bool b2 = p == own.c_str() || getenv("LARECOMP_LAUNCHER_FONT");
-        g_font_small = io.Fonts->AddFontFromFileTTF(p, 30 * (b2 ? 1.75f : 1), NULL, ranges);
-        g_font_menu = io.Fonts->AddFontFromFileTTF(p, 52 * (b2 ? 1.85f : 1), NULL, ranges);
-        g_font_title = io.Fonts->AddFontFromFileTTF(p, 92 * (b2 ? 2.3f : 1), NULL, ranges);
+        const float s_small = 30 * (b2 ? 1.75f : 1), s_menu = 52 * (b2 ? 1.85f : 1), s_title = 92 * (b2 ? 2.3f : 1);
+        // Baloo 2 has no CJK glyphs: merge the phone's font right after each main font (ImGui's MergeMode attaches
+        // to the previously added one). No CJK font on the device -> English / Portuguese still work unchanged.
+        g_font_small = io.Fonts->AddFontFromFileTTF(p, s_small, NULL, ranges);
+        ui_merge_cjk_font(io.Fonts, s_small);
+        g_font_menu = io.Fonts->AddFontFromFileTTF(p, s_menu, NULL, ranges);
+        ui_merge_cjk_font(io.Fonts, s_menu);
+        g_font_title = io.Fonts->AddFontFromFileTTF(p, s_title, NULL, ranges);
+        ui_merge_cjk_font(io.Fonts, s_title);
     }
     if (!g_font_menu) g_font_small = g_font_menu = g_font_title = io.Fonts->AddFontDefault();
     ImGuiStyle &st = ImGui::GetStyle();

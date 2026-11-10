@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_system_driver">系統驅動</string>
+    <string name="shortcut_system_driver_long">使用系統驅動啟動</string>
+    <string name="import_saves_title">匯入存檔？</string>
+    <string name="import_saves_message">這會取代目前全部存檔欄位。系統會保留一份備份，可用「匯出先前的存檔」取回。</string>
+    <string name="import_saves_continue">繼續</string>
+    <string name="import_saves_cancel">取消</string>
+    <string name="driver_error_title">圖形驅動錯誤</string>
+    <string name="driver_install">安裝驅動</string>
+    <string name="driver_system">使用系統驅動</string>
+    <string name="driver_close">關閉</string>
+    <string name="driver_install_failed">驅動未安裝：請選擇一個驅動套件（.zip）。</string>
+    <string name="play_channel">遊戲工作階段</string>
+    <string name="play_title">LAS Recomp 正在執行</string>
+    <string name="play_text">遊戲已在你離開的位置暫停。</string>
+</resources>

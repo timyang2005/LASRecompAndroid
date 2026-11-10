@@ -13,6 +13,7 @@
 
 #include "imgui.h"
 #include "i18n.h"
+#include "font_cjk.h"
 #include "option_rows.h"
 #include "settings_theme.h"
 #include "imgui_internal.h"  // (NavCursorVisible)
@@ -384,8 +385,12 @@ static void init(void) {
     for (const char *p : paths) {
         if (FILE *f = fopen(p, "rb")) fclose(f);  // a missing file is an assertion in ImGui, not a NULL return
         else continue;
-        if (!g_font) g_font = io.Fonts->AddFontFromFileTTF(p, 34, &cfg);
-        if (g_font && !g_font_big) { ImFontConfig b = cfg; b.FontNo = 0; g_font_big = io.Fonts->AddFontFromFileTTF(p, 56, &b); }
+        if (!g_font) { g_font = io.Fonts->AddFontFromFileTTF(p, 34, &cfg); ui_merge_cjk_font(io.Fonts, 34); }
+        if (g_font && !g_font_big) {
+            ImFontConfig b = cfg; b.FontNo = 0;
+            g_font_big = io.Fonts->AddFontFromFileTTF(p, 56, &b);
+            ui_merge_cjk_font(io.Fonts, 56);
+        }
     }
     // the menu window itself: Baloo 2 SemiBold, as on the start screen (shipped, OFL), at its Settings window's sizes; the
     // FPS counter, overlays and on-screen keyboard keep the fonts above
@@ -393,7 +398,9 @@ static void init(void) {
     if (const char *f = getenv("LARECOMP_MENU_FONT")) strlcpy(baloo, f, sizeof baloo);  // (test) another weight / face
     if (getenv("LARECOMP_MENU_FONT") || rt_resource("Baloo2-SemiBold.ttf", "third_party/fonts/Baloo2/Baloo2-SemiBold.ttf", baloo, sizeof baloo)) {
         g_menu_font = io.Fonts->AddFontFromFileTTF(baloo, 39, &cfg);
+        ui_merge_cjk_font(io.Fonts, 39);
         g_menu_font_big = io.Fonts->AddFontFromFileTTF(baloo, 72, &cfg);
+        ui_merge_cjk_font(io.Fonts, 72);
     }
     if (!g_font) g_font = io.Fonts->AddFontDefault();
     if (!g_font_big) g_font_big = g_font;
@@ -743,6 +750,14 @@ static void tab_about(void) {
     }
     hint("The game's text language, as its own system setting. Applies when the game restarts: Quit -> Title "
          "screen, then Play.");
+    ImGui::Spacing();
+    header("Interface language");
+    {
+        // The app's own menus and the start screen, at once; Auto follows the phone's language (settings_ui_language).
+        if (choice("App language", &g_settings.ui_language, g_ui_language_names, N_UI_LANGUAGES)) settings_save();
+        hint("The interface changes immediately. Auto follows the effective game language; languages without a "
+             "UI translation use English.");
+    }
     ImGui::Spacing();
     header("Controls");
     controls_bindings_draw(ImGui::GetFontSize() / 34);
