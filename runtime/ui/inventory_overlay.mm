@@ -29,6 +29,7 @@ const char *souls_at(int i, int *kind, bool *owned);
 }
 #include "../input_bind.h"
 #include "../game_addresses.h"
+#include "i18n.h"
 
 #define DUNGEON_RECORDS (GA(LIVE_SAVE) + 0xE0)  // live save: 0x10-byte records (+0 keys, +1 item bits)
 
@@ -286,7 +287,7 @@ static void pets_draw(ImDrawList *dl, ImFont *font, float ox, float oy, float u)
         ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, t);
         dl->AddText(font, fs, ImVec2(cx - ts.x * 0.5f, y), col, t);
     };
-    text("Companion", a.y + 8 * u, 15 * u, IM_COL32(240, 206, 110, 255));
+    text(tr("Companion"), a.y + 8 * u, 15 * u, IM_COL32(240, 206, 110, 255));
     ImVec2 ic(cx, a.y + 64 * u);
     dl->AddCircleFilled(ic, 28 * u, IM_COL32(120, 92, 40, 235), 32);
     dl->AddCircle(ic, 28 * u, IM_COL32(255, 220, 120, 255), 32, 2 * u);
@@ -299,15 +300,15 @@ static void pets_draw(ImDrawList *dl, ImFont *font, float ox, float oy, float u)
         ImVec2 ra(a.x + 6 * u, y - 2 * u), rb(b.x - 6 * u, y + 20 * u);
         if (on) dl->AddRectFilled(ra, rb, IM_COL32(120, 92, 40, 235), 6 * u);
         if (i == sel) dl->AddRect(ra, rb, IM_COL32(250, 226, 90, 255), 6 * u, 0, 2 * u);
-        text(kShort[o[i]], y, 16 * u, on || i == sel ? IM_COL32(255, 240, 200, 255) : IM_COL32(170, 150, 115, 230));
+        text(tr(kShort[o[i]]), y, 16 * u, on || i == sel ? IM_COL32(255, 240, 200, 255) : IM_COL32(170, 150, 115, 230));
     }
     if (sel >= 0) {  // on the slot: the game-style cursor around the card, "(A) Choose" under the list
         cursor_frame(dl, ImVec2(a.x - 6 * u, a.y - 6 * u), ImVec2(b.x + 6 * u, b.y + 6 * u), u);
         float y = b.y - 22 * u, fs = 15 * u;
-        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, "Choose");
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0, tr("Choose"));
         float w = 22 * u + ts.x, x0 = cx - w * 0.5f;
         confirm_glyph(dl, font, ImVec2(x0 + 8 * u, y), 9 * u);
-        dl->AddText(font, fs, ImVec2(x0 + 22 * u, y - ts.y * 0.5f), IM_COL32(255, 245, 225, 255), "Choose");
+        dl->AddText(font, fs, ImVec2(x0 + 22 * u, y - ts.y * 0.5f), IM_COL32(255, 245, 225, 255), tr("Choose"));
     } else {  // a hint that the grid's cursor reaches it: an arrow on the card's right edge
         float y = (a.y + b.y) * 0.5f;
         dl->AddTriangleFilled(ImVec2(b.x - 4 * u, y - 7 * u), ImVec2(b.x - 4 * u, y + 7 * u), ImVec2(b.x - 12 * u, y),

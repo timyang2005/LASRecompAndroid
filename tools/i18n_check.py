@@ -31,19 +31,58 @@ PAIR_RE = re.compile(r'\{\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\}\s
 # 不含空格标志：避免把 "100% is ..." 里的 "% i" 误判为格式符
 FORMAT_RE = re.compile(r"%(?:\d+\$)?[-+0#]*\d*(?:\.\d+)?[diouxXeEfgGcs%]")
 
-ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
+ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "a": 7, "b": 8, "f": 12, "v": 11,
+           "\\": 92, '"': 34, "'": 39}
+HEX = "0123456789abcdefABCDEF"
 
 
 def decode_c(s):
-    out, i = [], 0
+    """C 字符串字面量 -> 真实文本。按字节解码，支持 \\xNN（如源码里的 ‹ › 用 \\xe2\\x80\\xb9 写）
+    和 UTF-8 中文；\\xNN 若被逐字解码会与中文表键对不上，造成假的「缺失」。"""
+    out, i = bytearray(), 0
     while i < len(s):
         if s[i] == "\\" and i + 1 < len(s):
-            out.append(ESCAPES.get(s[i + 1], s[i + 1]))
+            n = s[i + 1]
+            if n == "x":  # 十六进制转义（可能连续多个字节组成一个 UTF-8 字符）
+                j = i + 2
+                while j < len(s) and s[j] in HEX:
+                    j += 1
+                if j > i + 2:
+                    out.append(int(s[i + 2:j], 16))
+                    i = j
+                    continue
+            if n in ESCAPES:
+                out.append(ESCAPES[n])
+            else:
+                out.extend(n.encode("utf-8"))
             i += 2
-        else:
-            out.append(s[i])
-            i += 1
-    return "".join(out)
+            continue
+        out.extend(s[i].encode("utf-8"))
+        i += 1
+    return out.decode("utf-8", errors="replace")
+
+
+# 葡语表 / 多语表里遗留的 C 相邻字符串「首段片段」：源码把几段拼成一个 desc/hint，
+# 运行时 tr() 收到的是拼合后的完整串，这些片段键永远查不到（葡语表同样如此）。
+# 中文表只收录完整串，故把它们从「必须覆盖」里剔除。
+DEAD_KEYS = {
+    "Frees the space that release takes. The release in play, saves and ",
+    "Sets up another release of the game (1.0.0, 1.0.1 or 1.1.0) from its own folder, next to ",
+}
+
+
+def is_ui_text(k):
+    """源码扫描出的字面量里，哪些是真正会显示给用户、因而必须有译文的。"""
+    if not k or len(k) < 2 or k.startswith("#"):
+        return False
+    if k.startswith("/") or k.endswith((".ttf", ".png", ".zip", ".so", ".ini", ".json", ".bin", ".txt", ".h", ".mm")):
+        return False
+    if k.startswith("[") or "http" in k or "application/" in k:
+        return False
+    # 纯格式串（%d / 32 之类）：数字与标点，不含成词的英文
+    if not re.search(r"[A-Za-z]{2}", k):
+        return False
+    return True
 
 
 def read(path):
@@ -172,9 +211,11 @@ def main():
             known |= set(ks)
     src = source_keys()
     print(f"源码 tr()/opt_* 字面量: {len(src)} 个键")
-    # 必须覆盖的键：葡语表 + 多语表（由上游为每个 UI 文本逐条维护，等价于新仓库的英文键清单）
-    required = known - {""}
     zh = set(hans_keys)
+    zh_strip = {k.strip() for k in zh}  # 中文表键可能带前导空格 / \n（拼接片段键）
+
+    # (1) 葡语表 / 多语表的键：上游逐条维护的英文基准，但需剔除运行时查不到的拼接片段死键
+    required = known - {""} - DEAD_KEYS
     missing = sorted(required - zh)
     print(f"\n必须覆盖的键 {len(required)} 个：中文表命中 {len(required & zh)} 个，缺 {len(missing)} 个")
     if missing:
@@ -183,16 +224,29 @@ def main():
             print(f"   {k[:110]}")
         if len(missing) > 40:
             print(f"   ... 其余 {len(missing) - 40} 条")
+        problems.append(f"中文表缺少 {len(missing)} 个必须覆盖的键")
+
+    # (2) 运行时 tr() 真正传入的源码字面量：按 strip 归一化检查覆盖。比葡语表更可靠——
+    #     葡语表本身不完整（缺 Mods / Marin / 60 fps 等），只靠它会漏掉中文下显示英文的文本。
+    src_ui = {k for k in src if is_ui_text(k)}
+    src_missing = sorted(k for k in src_ui if k.strip() not in zh_strip)
+    print(f"源码界面文本 {len(src_ui)} 个键：中文表命中 {len(src_ui) - len(src_missing)} 个，缺 {len(src_missing)} 个")
+    if src_missing:
+        print("--- 运行时会显示英文的键（前 40 条）---")
+        for k in src_missing[:40]:
+            print(f"   {k[:110]}")
+        problems.append(f"中文表缺少 {len(src_missing)} 个运行时会查表的源码键")
+
+    all_missing = sorted(set(missing) | set(src_missing))
     if args.missing_out:
         with open(args.missing_out, "w", encoding="utf-8") as f:
-            f.write("\n".join(missing) + "\n")
+            f.write("\n".join(all_missing) + "\n")
         print(f"\n完整缺口清单: {args.missing_out}")
-    if missing:
-        problems.append(f"中文表缺少 {len(missing)} 个必须覆盖的键")
-    # 源码里出现、但两张表都没覆盖的字符串：多为格式串 / C 拼接片段，仅作提示，不算失败
-    extra = sorted(src - required - zh)
+
+    # 被判定为不需要翻译的源码字面量（格式串、路径、ID 等），仅作提示
+    extra = sorted(src - src_ui)
     if extra:
-        print(f"\n提示：源码中另有 {len(extra)} 个字面量未入中文表（格式串、拼接片段等），不影响查表")
+        print(f"\n提示：另有 {len(extra)} 个非界面文本字面量（格式串 / ID / 路径等）不要求译文")
 
     # UTF-8
     for p in (hans_path, hant_path):
