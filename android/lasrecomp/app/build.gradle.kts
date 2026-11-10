@@ -49,7 +49,7 @@ android {
         getByName("main") {
             java.srcDirs("src/main/java", deps.resolve("java"))  // (SDL's Java side, the same version as libSDL3.so)
             jniLibs.srcDirs(gen.get().asFile.resolve("jniLibs"))
-            assets.srcDirs(gen.get().asFile.resolve("assets"))
+            assets.srcDirs(gen.get().asFile.resolve("assets"), "src/main/assets")  // (the second: the CJK subset)
             res.srcDirs("src/main/res", gen.get().asFile.resolve("res"))
         }
     }

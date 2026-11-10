@@ -188,6 +188,10 @@ jobs:
           set -euo pipefail
           APK=android/lasrecomp/app/build/outputs/apk/release/app-release.apk
           [ -f "$APK" ] || { echo "::error::APK 未生成：$APK"; exit 1; }
+          # 中文字体是运行时从 assets 复制到 files/res 再读的（runtime/ui/font_cjk.h）：不在包里就只剩方块
+          unzip -l "$APK" | grep -q 'assets/res/fonts/ui-cjk.otf' \
+            || { echo "::error::assets/res/fonts/ui-cjk.otf 没有打进 APK（检查 sourceSets 的 assets.srcDirs）"; exit 1; }
+          echo "字体: $(unzip -l "$APK" | awk '/assets\/res\/fonts\/ui-cjk.otf/{print $1" bytes"}')"
           APKSIGNER=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --verbose --print-certs "$APK" > /tmp/apksigner.txt
           cat /tmp/apksigner.txt
