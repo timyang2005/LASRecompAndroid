@@ -1,10 +1,9 @@
-# 对照构建：用上游 main 的原始代码（不含任何汉化改动）走与 apk.yml 完全相同的构建链。
+# 对照构建：用上游 main 的原始代码（不含任何汉化改动）走与 apk.yml 完全相同的构建链，
+# 并用同一把固定签名（可选覆盖安装，不卸载、不清数据）。
 #
-# 目的只有一个：把“我的 APK 闪退”这件事拆成两半。
+# 目的只有一个：把“我的 APK 闪退”拆成两半。
 #   control 也闪退  -> 构建链/产物问题（NDK、SDL3、FFmpeg、AGP 等），与汉化无关
 #   control 能运行  -> 问题在汉化改动（i18n 表、字体合并、settings）
-#
-# 用 debug 签名，与 release 包签名不同：安装前需要先卸载现有版本（也会顺带清掉残留的应用数据）。
 name: Android APK (control, upstream main)
 
 on:
@@ -16,28 +15,36 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: apk-control
+  cancel-in-progress: true
 
 jobs:
   control:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Checkout（上游 main，含子模块）
+      - name: Checkout（先取本分支的签名密钥）
         uses: actions/checkout@v4
         with:
-          ref: main
           submodules: recursive
           fetch-depth: 1
 
-      - name: 确认代码来源
+      - name: 切到上游 main（保留签名密钥）
         run: |
-          git log --oneline -3
-          echo "--- 汉化文件应当全部不存在 ---"
-          for f in runtime/ui/i18n_zh_hans.inc runtime/ui/font_cjk.h; do
-            [ -e "$f" ] && { echo "::error::$f 存在，checkout 的不是上游 main"; exit 1; }
+          set -euo pipefail
+          cp android/lasrecomp/ci/lasrecomp-release.jks /tmp/release.jks
+          git fetch --depth 1 origin main
+          git reset --hard FETCH_HEAD
+          git clean -fdx
+          git submodule update --init --recursive
+          git log --oneline -2
+          for f in runtime/ui/i18n_zh_hans.inc runtime/ui/font_cjk.h runtime/ui/i18n_zh_hant.inc; do
+            [ -e "$f" ] && { echo "::error::$f 存在，工作区不是上游 main"; exit 1; }
           done
-          echo "OK: 上游代码"
+          echo "OK: 工作区是上游 main，无任何汉化文件"
 
       - name: 释放磁盘空间
         run: |
@@ -103,38 +110,44 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f android/deps/out/lib/libavformat.so ]; then echo '已有 FFmpeg，跳过'; exit 0; fi
-          if ! bash android/deps/build_ffmpeg.sh; then
-            echo "::error::FFmpeg 构建失败：对照包必须与 apk.yml 的产物一致"; exit 1
-          fi
+          bash android/deps/build_ffmpeg.sh
 
       - name: 手机端游戏代码构建器（Python / zig）
         run: |
           set -euo pipefail
           if [ -f android/deps/out/gen/zig/libzig.so ]; then echo '已有 on-device builder，跳过'; exit 0; fi
-          if ! bash android/deps/build_gen_deps.sh; then
-            echo "::error::on-device builder 构建失败：对照包必须与 apk.yml 的产物一致"; exit 1
-          fi
+          bash android/deps/build_gen_deps.sh
 
-      - name: 编译（debug 签名：无 keystore.properties）
-        working-directory: android/lasrecomp
+      - name: 写入与 release 包相同的固定签名
         run: |
           set -euo pipefail
-          rm -f "$HOME/.lasrecomp/keystore.properties"
-          bash ./gradlew --no-daemon assembleRelease
+          mkdir -p "$HOME/.lasrecomp"
+          cat > "$HOME/.lasrecomp/keystore.properties" <<EOF
+          storeFile=/tmp/release.jks
+          storePassword=lasrecomp
+          keyAlias=lasrecomp
+          keyPassword=lasrecomp
+          EOF
 
-      - name: 整理产物
+      - name: 编译并签名
+        working-directory: android/lasrecomp
+        run: bash ./gradlew --no-daemon assembleRelease
+
+      - name: 校验签名并整理产物
         run: |
           set -euo pipefail
           APK=android/lasrecomp/app/build/outputs/apk/release/app-release.apk
           [ -f "$APK" ] || { echo "::error::APK 未生成：$APK"; exit 1; }
           APKSIGNER=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --verbose --print-certs "$APK" > dist-sign.txt
-          cat dist-sign.txt
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee /tmp/sign.txt
+          FP=$(awk -F'SHA-256 digest: ' '/certificate SHA-256 digest/{gsub(/:|[[:space:]]/,"",$2); print tolower($2); exit}' /tmp/sign.txt)
+          echo "证书 SHA-256: $FP"
+          [ "$FP" = "f00f7ebe8bb0d960a74399db2d4a8fba5fe13d5448dd2a662c945a896a2f4cff" ] || {
+            echo "::error::签名证书不匹配（应与汉化包相同，可直接覆盖安装）"; exit 1; }
           mkdir -p dist
-          cp "$APK" dist/LASRecomp-control-0.5.10.apk
-          (cd dist && sha256sum LASRecomp-control-0.5.10.apk > LASRecomp-control-0.5.10.apk.sha256)
-          ls -l dist
-          { echo "对照包：上游 main，无任何汉化改动，debug 签名。"; echo; cat dist-sign.txt; } > dist/README.txt
+          cp "$APK" dist/LASRecomp-control.apk
+          (cd dist && sha256sum LASRecomp-control.apk > LASRecomp-control.apk.sha256)
+          { echo "对照包：上游 main 原始代码，无任何汉化改动，签名与汉化包相同。"; echo; cat /tmp/sign.txt; } > dist/README.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -142,3 +155,22 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: 发布为直链
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG=apk-control
+          NOTES="对照实验：与汉化包**完全相同**的构建链，但代码是上游 main 的原始版本（无任何汉化改动）。
+          签名与汉化包相同（证书 SHA-256 f00f7ebe...），可直接覆盖安装，不用卸载。
+
+          - 如果这个包**也闪退**：问题在构建链，不在汉化。
+          - 如果这个包**能正常运行**：问题在汉化改动，继续二分。"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" --prerelease --title "对照包 · 上游 main" --notes "$NOTES" dist/*
+          fi
+          echo "::notice::直链 https://github.com/$GH_REPO/releases/download/$TAG/LASRecomp-control.apk"
