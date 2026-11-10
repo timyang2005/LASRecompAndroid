@@ -8,6 +8,11 @@
 name: Android APK (control, upstream main)
 
 on:
+  # 本文件改动一次就构建一次（workflow_dispatch 只在默认分支可用，而 main 要保持上游镜像）
+  push:
+    branches: [feat/zh-launcher]
+    paths:
+      - '.github/workflows/apk-control.yml'
   workflow_dispatch:
 
 permissions:
