@@ -1,0 +1,139 @@
+# 对照构建：用上游 main 的原始代码（不含任何汉化改动）走与 apk.yml 完全相同的构建链。
+#
+# 目的只有一个：把“我的 APK 闪退”这件事拆成两半。
+#   control 也闪退  -> 构建链/产物问题（NDK、SDL3、FFmpeg、AGP 等），与汉化无关
+#   control 能运行  -> 问题在汉化改动（i18n 表、字体合并、settings）
+#
+# 用 debug 签名，与 release 包签名不同：安装前需要先卸载现有版本（也会顺带清掉残留的应用数据）。
+name: Android APK (control, upstream main)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout（上游 main，含子模块）
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 确认代码来源
+        run: |
+          git log --oneline -3
+          echo "--- 汉化文件应当全部不存在 ---"
+          for f in runtime/ui/i18n_zh_hans.inc runtime/ui/font_cjk.h; do
+            [ -e "$f" ] && { echo "::error::$f 存在，checkout 的不是上游 main"; exit 1; }
+          done
+          echo "OK: 上游代码"
+
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL /usr/local/lib/android/sdk/ndk || true
+          df -h /
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 Android SDK / NDK / CMake
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || { echo "::error::sdkmanager 不存在：$SDKM"; exit 1; }
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install 'platforms;android-36' 'build-tools;36.0.0' 'cmake;3.30.4' 'ndk;30.0.16248370'
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build zip unzip
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_LINUX=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "$SDK/cmake/3.30.4/bin" >> "$GITHUB_PATH"
+
+      - name: local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/lasrecomp/local.properties
+
+      - name: 缓存原生依赖
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            android/deps/src
+            android/deps/out
+          key: deps-${{ runner.os }}-${{ hashFiles('android/deps/*.sh') }}
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/lasrecomp/**/*.gradle.kts', 'android/lasrecomp/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 原生依赖（必需）
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            if bash android/deps/build_deps.sh; then exit 0; fi
+            echo "::warning::build_deps.sh 第 $i 次失败，20 秒后重试"
+            sleep 20
+          done
+          echo "::error::build_deps.sh 三次失败"; exit 1
+
+      - name: FFmpeg
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/lib/libavformat.so ]; then echo '已有 FFmpeg，跳过'; exit 0; fi
+          if ! bash android/deps/build_ffmpeg.sh; then
+            echo "::error::FFmpeg 构建失败：对照包必须与 apk.yml 的产物一致"; exit 1
+          fi
+
+      - name: 手机端游戏代码构建器（Python / zig）
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/gen/zig/libzig.so ]; then echo '已有 on-device builder，跳过'; exit 0; fi
+          if ! bash android/deps/build_gen_deps.sh; then
+            echo "::error::on-device builder 构建失败：对照包必须与 apk.yml 的产物一致"; exit 1
+          fi
+
+      - name: 编译（debug 签名：无 keystore.properties）
+        working-directory: android/lasrecomp
+        run: |
+          set -euo pipefail
+          rm -f "$HOME/.lasrecomp/keystore.properties"
+          bash ./gradlew --no-daemon assembleRelease
+
+      - name: 整理产物
+        run: |
+          set -euo pipefail
+          APK=android/lasrecomp/app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "::error::APK 未生成：$APK"; exit 1; }
+          APKSIGNER=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > dist-sign.txt
+          cat dist-sign.txt
+          mkdir -p dist
+          cp "$APK" dist/LASRecomp-control-0.5.10.apk
+          (cd dist && sha256sum LASRecomp-control-0.5.10.apk > LASRecomp-control-0.5.10.apk.sha256)
+          ls -l dist
+          { echo "对照包：上游 main，无任何汉化改动，debug 签名。"; echo; cat dist-sign.txt; } > dist/README.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LASRecomp-control
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
