@@ -9,12 +9,16 @@ on:
       - 'runtime/ui/i18n*'
       - 'runtime/settings.*'
       - 'tools/i18n_check.py'
+      - 'tools/font_coverage.py'
+      - 'android/lasrecomp/app/src/main/assets/res/fonts/**'
       - '.github/workflows/i18n.yml'
   pull_request:
     paths:
       - 'runtime/ui/i18n*'
       - 'runtime/settings.*'
       - 'tools/i18n_check.py'
+      - 'tools/font_coverage.py'
+      - 'android/lasrecomp/app/src/main/assets/res/fonts/**'
       - '.github/workflows/i18n.yml'
   workflow_dispatch:
 
@@ -29,3 +33,8 @@ jobs:
           python-version: '3.11'
       - name: 校验简繁中文表
         run: python3 tools/i18n_check.py
+      # 打包的中文字体是子集：表里新增的字如果不在里面，手机上就是方块。这一步把它变成构建失败。
+      - name: 安装 fonttools
+        run: pip install fonttools
+      - name: 校验打包字体覆盖全部用字
+        run: python3 tools/font_coverage.py

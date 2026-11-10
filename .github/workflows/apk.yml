@@ -19,6 +19,7 @@ on:
       - '.github/workflows/apk.yml'
       - 'android/lasrecomp/ci/**'
       - 'android/lasrecomp/app/build.gradle.kts'
+      - 'android/lasrecomp/app/src/main/**'   # Java (the res/ env) and the bundled CJK subset (assets/res/fonts)
       - 'runtime/**'
       - 'third_party/**'
       - 'tools/**'

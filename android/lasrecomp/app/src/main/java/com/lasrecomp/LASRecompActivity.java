@@ -115,6 +115,8 @@ public class LASRecompActivity extends SDLActivity {
         try {
             File res = new File(getFilesDir(), "res");
             copyAssets("res", res);
+            // the CJK face the interface merges in (res/fonts/ui-cjk.otf): see runtime/ui/font_cjk.h
+            setenv("LARECOMP_RES_DIR", res.getAbsolutePath());
             File games = new File(getExternalFilesDir(null), "extracted");
             copyIfChanged(new File(games, "lasgame.so"), new File(res, "lasgame.so"));
             copyIfChanged(new File(games, "lasgame.so.id"), new File(res, "lasgame.so.id"));
@@ -1027,16 +1029,22 @@ public class LASRecompActivity extends SDLActivity {
         Os.setenv(name, value, true);
     }
 
+    // Files and folders (res/fonts/ui-cjk.otf is one level down): am.open() on a folder throws, which would take
+    // the whole onCreate setup down with it.
     private void copyAssets(String from, File to) throws IOException {
         AssetManager am = getAssets();
         String[] names = am.list(from);
-        if (names == null) return;
-        to.mkdirs();
-        for (String n : names) {
-            try (InputStream in = am.open(from + "/" + n)) {
-                copy(in, new File(to, n));
+        if (names == null || names.length == 0) {  // a file (or an empty folder)
+            try (InputStream in = am.open(from)) {
+                to.getParentFile().mkdirs();
+                copy(in, to);
+            } catch (IOException e) {
+                to.mkdirs();
             }
+            return;
         }
+        to.mkdirs();
+        for (String n : names) copyAssets(from + "/" + n, new File(to, n));
     }
 
     // The first driver in <external files>/drivers, in internal storage (copied again only when it changed).

@@ -22,10 +22,10 @@ android {
         applicationId = "com.lasrecomp.android"
         minSdk = 30
         targetSdk = 36
-        versionCode = 27
+        versionCode = 28
         // -PlasCjkMode bisects a crash in the CJK font merge (runtime/ui/font_cjk.h, apk-diag.yml):
         // 0 = translate but never merge, 2 = one small face, 1 (default) = normal.
-        versionName = "0.5.10" + when (lasCjkMode) { "0" -> "-zh5a"; "2" -> "-zh5b"; else -> "-zh4" }
+        versionName = "0.5.10" + when (lasCjkMode) { "0" -> "-zh6a"; "2" -> "-zh6b"; else -> "-zh6" }
         ndk {
             abiFilters += "arm64-v8a"
         }

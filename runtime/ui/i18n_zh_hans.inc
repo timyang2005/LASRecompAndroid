@@ -1078,7 +1078,7 @@
 {"Not used at Match display: the game already renders at your display's resolution.", "「匹配屏幕」下不生效：游戏已按屏幕分辨率渲染。"},
 {"Objects' own movement", "物体自身移动"},
 {"On-screen buttons and stick while no controller is connected. The back button opens this menu.", "未连接手柄时显示屏幕按键与摇杆。返回键可打开此菜单。"},
-{"On: the button labelled A on an Xbox-style pad or handheld (the bottom one; Cross on a PlayStation pad) is the game's A. Off: by position, as on a Switch - A is the right button.", "开启：Xbox 布局手柄或掌机上标 A 的按键（下方那颗；PlayStation 手柄为 ✕）对应游戏的 A。关闭：按位置对应，与 Switch 一致 —— A 是右侧按键。"},
+{"On: the button labelled A on an Xbox-style pad or handheld (the bottom one; Cross on a PlayStation pad) is the game's A. Off: by position, as on a Switch - A is the right button.", "开启：Xbox 布局手柄或掌机上标 A 的按键（下方那颗；PlayStation 手柄为 ×）对应游戏的 A。关闭：按位置对应，与 Switch 一致 —— A 是右侧按键。"},
 {"On: the game's memory is mapped straight into the GPU's, the fastest way. Off: what each frame uses is copied instead, which costs CPU time but draws right where the fast way doesn't. Automatic: on for Adreno 8xx GPUs, off for the others. Applies when the game starts.", "开启：把游戏内存直接映射到 GPU，速度最快。关闭：改为逐帧复制所需数据，会多耗 CPU，但在快速路径绘制异常时能正常显示。自动：Adreno 8xx 开启，其他 GPU 关闭。游戏启动时生效。"},
 {"Only the buttons the game uses", "仅显示游戏用到的按键"},
 {"Open / close this menu:  Android Back, F1, Esc, controller Home / Guide, or Back + Start", "打开 / 关闭此菜单：Android 返回键、F1、Esc、手柄 Home / Guide 键，或 Back + Start"},
