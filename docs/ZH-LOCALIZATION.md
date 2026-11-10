@@ -49,13 +49,38 @@ Language 选项控制，与界面语言是两套独立的设置。
 /system/fonts/NotoSansSC-Regular.otf
 /system/fonts/NotoSansSC-VF.ttf
 /system/fonts/NotoSansCJKsc-Regular.otf
+/system/fonts/MiSans-Regular.ttf        # 小米 HyperOS / MIUI 用 MiSans，没有 Noto
+/system/fonts/MiSansVF.ttf
 /system/fonts/DroidSansFallback.ttf
 /system/fonts/NotoSansCJK-Regular.otf
 ```
 
 `LARECOMP_CJK_FONT=<path>` 可指定其它字体用于测试。字形范围由 `i18n_cjk_text()` 中的非 ASCII 字符**逐字**生成
-`{cp, cp, ...}` 精确范围（约 1.5k 个码点），不是整段 Unicode 区间，避免图集被无关汉字撑大。设备上找不到 CJK 字体时
+`{cp, cp, ...}` 精确范围（约 1.3k 个码点），不是整段 Unicode 区间，避免图集被无关汉字撑大。设备上找不到 CJK 字体时
 保持英文 / 葡语原样，不会崩溃。
+
+### 字号上限（不做会启动即闪退）
+
+中文表实际用到 **1339 个不同字符**（简繁合并去重）。启动器三档字号是 52.5 / 96.2 / **211.6**（`92 * 2.3`）。
+三档都合并这 1339 个字形的话，仅标题档就需约 61M px，ImGui 最终产出 **4096×32768** 的图集（`TEX_HEIGHT_MAX`），
+转 RGBA32 约 **537 MB**，远超手机 GPU 的 `GL_MAX_TEXTURE_SIZE`（通常 8192 / 16384）。纹理上传失败，
+应用在**第一帧就崩** —— `0.5.10-2` 的闪退正是这个原因。
+
+因此 `CJK_MAX_PX = 80`：超过 80px 的档位按 80px 栅格化、再由 ImGui 放大（`ImFontConfig::SizePixels`），
+`OversampleH/V` 固定为 1（默认的 3 会让字形宽三倍）。修复后：
+
+| 图集 | 档位（px） | 尺寸 | RGBA |
+|---|---|---|---|
+| 启动器 | 52.5 / 80 / 80 | 4096×8192 | 134 MB |
+| 游戏内菜单 | 34 / 39 / 56 / 72（均未超限） | 4096×4096 | 67 MB |
+
+代价是标题行的中文比 211px 的拉丁字母小；菜单项（96→80）几乎看不出差别。合并过程写 logcat，便于现场核对：
+
+```bash
+adb logcat -s LASRecompCJK
+# [cjk] font=/system/fonts/MiSans-Regular.ttf glyphs=1339
+# [cjk] merge requested=211.6 actual=80.0 glyphs=1339 ok
+```
 
 ## 明确不动的部分
 
