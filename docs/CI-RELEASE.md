@@ -4,7 +4,7 @@
 
 | 分支 | 内容 |
 |---|---|
-| `main` | 上游纯镜像，只做 fast-forward，不放本 fork 的任何改动 |
+| `main` | 上游镜像。唯一例外：`README.md` 语言行多一个简体中文入口（指向本分支的中文 README），因此上游更新要 **merge**，不能 `--ff-only` |
 | `feat/zh-launcher` | 汉化与 CI 改动，发布也从这里出 |
 
 ## 1. 版本号
@@ -82,10 +82,15 @@ Runner 上装 `platforms;android-36`、`build-tools;36.0.0`、`cmake;3.30.4`、`
 
 ```bash
 git fetch upstream            # upstream = https://github.com/mamcjr/LASRecompAndroid
-git checkout main && git merge --ff-only upstream/main && git push origin main
+git checkout main && git merge upstream/main && git push origin main
 git checkout feat/zh-launcher && git merge main
 # 冲突一般在 runtime/ui/launcher.mm、menu.mm、settings.c（汉化改过的文件）
+# 以及 README.md 第 3 行的语言切换行（本 fork 多一个「简体中文」入口，上游若增删语言会冲突）
 ```
+
+`main` 上只允许存在那一行 fork 入口，其余内容与上游保持一致；冲突解决时保留上游的改动，
+再把 ` | **[简体中文](https://github.com/timyang2005/LASRecompAndroid/blob/feat/zh-launcher/README.zh-CN.md)**`
+接在语言行末尾。
 
 合并完成后：
 
