@@ -72,9 +72,9 @@ jobs:
         run: |
           set -euo pipefail
           PROP=android/lasrecomp/version.properties
-          BASE_NAME=$(sed -n 's/^baseName=//p' "$PROP")
-          BASE_CODE=$(sed -n 's/^baseCode=//p' "$PROP")
-          FORK_REV=$(sed -n 's/^forkRev=//p' "$PROP")
+          BASE_NAME=$(sed -n 's/^baseName=//p' "$PROP" | tr -d '\r')
+          BASE_CODE=$(sed -n 's/^baseCode=//p' "$PROP" | tr -d '\r')
+          FORK_REV=$(sed -n 's/^forkRev=//p' "$PROP" | tr -d '\r')
           [ -n "$BASE_NAME" ] && [ -n "$BASE_CODE" ] && [ -n "$FORK_REV" ] || {
             echo "::error::$PROP 缺少 baseName / baseCode / forkRev"; exit 1; }
           VERSION_NAME="$BASE_NAME-zh.$FORK_REV"
