@@ -1,17 +1,17 @@
-# 启动器中文化的静态校验（键对齐、格式符、覆盖率、UTF-8）。
-# APK 的编译与固定签名在 .github/workflows/apk.yml，本文件不重复构建。
-# 上游 mamcjr/LASRecompAndroid 没有 workflows；本文件只覆盖本 fork 的汉化分支产物。
-name: i18n
+# 启动器中文化的静态校验（键对齐、格式符、覆盖率、字体字形、UTF-8）。
+# APK 的编译、签名与发布在 android-apk.yml；本工作流只做纯静态检查，几秒出结果。
+name: i18n check
 
 on:
   push:
+    branches: [feat/zh-launcher]
     paths:
       - 'runtime/ui/i18n*'
       - 'runtime/settings.*'
       - 'tools/i18n_check.py'
       - 'tools/font_coverage.py'
       - 'android/lasrecomp/app/src/main/assets/res/fonts/**'
-      - '.github/workflows/i18n.yml'
+      - '.github/workflows/i18n-check.yml'
   pull_request:
     paths:
       - 'runtime/ui/i18n*'
@@ -19,11 +19,10 @@ on:
       - 'tools/i18n_check.py'
       - 'tools/font_coverage.py'
       - 'android/lasrecomp/app/src/main/assets/res/fonts/**'
-      - '.github/workflows/i18n.yml'
+      - '.github/workflows/i18n-check.yml'
   workflow_dispatch:
 
 jobs:
-  # 纯标准库，ubuntu-latest 即可通过：键对齐、无重复、格式符一致、必须覆盖的键齐全、UTF-8。
   i18n:
     runs-on: ubuntu-latest
     steps:

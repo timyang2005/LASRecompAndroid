@@ -28,3 +28,5 @@ testes/
 /android/deps/out/
 /android/deps/work/
 /android/lasrecomp/local.properties
+# 签名密钥只放 Secrets / 本机 ~/.lasrecomp，不进仓库
+/android/lasrecomp/ci/*.jks

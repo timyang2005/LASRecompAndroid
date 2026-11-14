@@ -1,5 +1,7 @@
 # 启动即闪退：ROM 字体在 release 构建下会 SIGSEGV
 
+> 事后记录。当时用来二分的临时工作流和诊断包（cjk0 / cjk2、对照包）已经删除，结论与修法保留。
+
 对应提交 `5f8c876`（修复）与 `a8aa6f2`（打包路径）。现象：上游官方 APK 正常，本 fork 的中文化包一打开就退，
 日志停在 Vulkan 初始化那几行，没有任何 `signal 11` 记录。
 
@@ -45,11 +47,12 @@ IM_ASSERT(0 && "stbtt_InitFont(): failed to parse FontData. ...");
 ## 修法
 
 1. **不再依赖 ROM 字体。** APK 自带一份子集：`assets/res/fonts/ui-cjk.otf`，Noto Sans CJK SC
-   （OFL 1.1，见同目录 `OFL.txt`），292 KB，只含界面用到的 1338 个码点 + ASCII。
+   （OFL 1.1，见同目录 `OFL.txt`），292 KB，只含界面用到的码点（当前 1323 个）+ ASCII。
    Java 侧把 `assets/res` 复制到 `files/res` 并 `setenv("LARECOMP_RES_DIR", ...)`，native 从这里读。
 2. **系统字体只作兜底，且必须先过 `sfnt_ok()`。** 检查 tag、表目录是否落在缓冲区内、有没有 `cmap` 和
    可用的轮廓表（`glyf` 或 `CFF `），明确拒绝 `CFF2`。不合格的字体直接跳过 —— 中文退化成方块，不会崩。
-3. **版本号 `0.5.10-zh6` / `versionCode 28`**，启动屏右下角能看到。
+3. **版本号由 `android/lasrecomp/version.properties` 统一推导**（`0.5.11-zh.1` / `versionCode 2701`），
+   见 [`docs/CI-RELEASE.md`](CI-RELEASE.md)；启动屏右下角能看到。
 
 顺带修掉的几个问题：
 

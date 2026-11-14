@@ -1,0 +1,297 @@
+# LAS Recomp 汉化版 APK：构建 + 签名 + 发布。
+#
+# 版本号只有一个来源：android/lasrecomp/version.properties
+#   versionName = <baseName>-zh.<forkRev>     例 0.5.11-zh.1
+#   versionCode = <baseCode>*100 + forkRev    例 27*100+1 = 2701
+# 打 tag 发布时，工作流会校验 tag 与这个产物版本严格一致（v0.5.11-zh.1），不一致直接失败。
+#
+# 触发：
+#   push 到 feat/zh-launcher  -> 只构建，产物进 Artifacts（验证分支能不能编过）
+#   push tag v*               -> 构建并发布 GitHub Release（同 tag 覆盖上传，重跑安全）
+#   workflow_dispatch         -> 只构建（手动验证用）
+#
+# 签名：固定密钥，来自仓库 Secrets（不随代码分发）：
+#   SIGNING_KEYSTORE_B64 / SIGNING_STORE_PASSWORD / SIGNING_KEY_ALIAS / SIGNING_KEY_PASSWORD
+# 证书指纹必须等于 EXPECTED_CERT_SHA256，否则不交付（保证老用户能直接覆盖安装、存档不丢）。
+#
+# 构建链按 README "Building from source"：
+#   android/deps/build_deps.sh       SDL3 / shaderc / Vulkan 头 / VMA / volk / DejaVu（必需）
+#   android/deps/build_ffmpeg.sh     影片与启动器背景（可选，失败则 LARECOMP_NO_FFMPEG）
+#   android/deps/build_gen_deps.sh   手机端游戏代码构建器 Python/zig（可选，失败则不打包 gen/）
+#   cd android/lasrecomp && ./gradlew assembleRelease
+name: Android APK
+
+on:
+  push:
+    branches: [feat/zh-launcher]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 发布 Release
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: false   # 发布任务不取消重建，避免 Release 半成品
+
+env:
+  # android/lasrecomp/ci/ 里那把公钥的证书 SHA-256（无冒号、小写）；换密钥时必须同步改这里
+  EXPECTED_CERT_SHA256: f00f7ebe8bb0d960a74399db2d4a8fba5fe13d5448dd2a662c945a896a2f4cff
+
+jobs:
+  # 中文表与打包字体的静态校验：表不对齐、缺译文、缺字形，都在这里失败，
+  # 不让一个「运行时显示英文 / 方块」的包进入构建。
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装 fonttools
+        run: pip install fonttools
+      - name: 校验简繁中文表（键对齐 / 格式符 / 覆盖率 / UTF-8）
+        run: python3 tools/i18n_check.py
+      - name: 校验打包字体覆盖全部用字
+        run: python3 tools/font_coverage.py
+
+  apk:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout（含子模块 libadrenotools）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 解析版本号并校验 tag
+        id: ver
+        run: |
+          set -euo pipefail
+          PROP=android/lasrecomp/version.properties
+          BASE_NAME=$(sed -n 's/^baseName=//p' "$PROP")
+          BASE_CODE=$(sed -n 's/^baseCode=//p' "$PROP")
+          FORK_REV=$(sed -n 's/^forkRev=//p' "$PROP")
+          [ -n "$BASE_NAME" ] && [ -n "$BASE_CODE" ] && [ -n "$FORK_REV" ] || {
+            echo "::error::$PROP 缺少 baseName / baseCode / forkRev"; exit 1; }
+          VERSION_NAME="$BASE_NAME-zh.$FORK_REV"
+          VERSION_CODE=$((BASE_CODE * 100 + FORK_REV))
+          echo "versionName=$VERSION_NAME versionCode=$VERSION_CODE"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            [ "${GITHUB_REF_NAME}" = "v$VERSION_NAME" ] || {
+              echo "::error::tag ${GITHUB_REF_NAME} 与 version.properties 不一致（应为 v$VERSION_NAME）"
+              echo "::error::发版流程：先改 forkRev（或 baseName/baseCode），提交后再打 v<versionName> 标签"
+              exit 1; }
+          fi
+          {
+            echo "name=$VERSION_NAME"
+            echo "code=$VERSION_CODE"
+            echo "base=$BASE_NAME"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /opt/hostedtoolcache/CodeQL /usr/local/lib/android/sdk/ndk || true
+          df -h /
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 Android SDK / NDK / CMake
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || { echo "::error::sdkmanager 不存在：$SDKM"; exit 1; }
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install 'platforms;android-36' 'build-tools;36.0.0' 'cmake;3.30.4' 'ndk;30.0.16248370'
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build zip unzip
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          # build_ffmpeg.sh / build_unicorn.sh 默认另下载 Linux NDK r30：复用 SDK 里同一份
+          echo "ANDROID_NDK_LINUX=$SDK/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "$SDK/cmake/3.30.4/bin" >> "$GITHUB_PATH"
+
+      - name: local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/lasrecomp/local.properties
+
+      - name: 缓存原生依赖
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            android/deps/src
+            android/deps/out
+          key: deps-${{ runner.os }}-${{ hashFiles('android/deps/*.sh') }}
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/lasrecomp/**/*.gradle.kts', 'android/lasrecomp/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 原生依赖（必需）
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            if bash android/deps/build_deps.sh; then exit 0; fi
+            echo "::warning::build_deps.sh 第 $i 次失败，20 秒后重试"
+            sleep 20
+          done
+          echo "::error::build_deps.sh 三次失败"; exit 1
+
+      # 以下两步失败不阻断 APK：清掉半成品后由 CMake / prepareLasRecomp 自动降级
+      - name: FFmpeg（影片与启动器背景）
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/lib/libavformat.so ]; then echo '已有 FFmpeg，跳过'; exit 0; fi
+          if ! bash android/deps/build_ffmpeg.sh; then
+            echo "::warning::FFmpeg 构建失败，APK 将以 LARECOMP_NO_FFMPEG 编译（无影片/背景）"
+            rm -f android/deps/out/lib/libav*.so android/deps/out/lib/libswscale.so
+          fi
+
+      - name: 手机端游戏代码构建器（Python / zig）
+        run: |
+          set -euo pipefail
+          if [ -f android/deps/out/gen/zig/libzig.so ]; then echo '已有 on-device builder，跳过'; exit 0; fi
+          if ! bash android/deps/build_gen_deps.sh; then
+            echo "::warning::on-device builder 构建失败，APK 将不含 gen/（需自行提供 lasgame.so）"
+            rm -rf android/deps/out/gen
+          fi
+
+      - name: 写入签名配置（仓库 Secrets）
+        env:
+          CI_STORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          CI_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          CI_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          CI_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [ -n "$CI_STORE_B64" ] || {
+            echo "::error::缺少 secret SIGNING_KEYSTORE_B64：Settings -> Secrets and variables -> Actions 里配置签名密钥"
+            echo "::error::本地生成：base64 -w0 lasrecomp-release.jks | gh secret set SIGNING_KEYSTORE_B64"
+            exit 1; }
+          [ -n "$CI_STORE_PASSWORD" ] || { echo "::error::缺少 secret SIGNING_STORE_PASSWORD"; exit 1; }
+          mkdir -p "$HOME/.lasrecomp"
+          echo "$CI_STORE_B64" | base64 -d > "$HOME/.lasrecomp/release.jks"
+          cat > "$HOME/.lasrecomp/keystore.properties" <<EOF
+          storeFile=$HOME/.lasrecomp/release.jks
+          storePassword=$CI_STORE_PASSWORD
+          keyAlias=${CI_KEY_ALIAS:-lasrecomp}
+          keyPassword=${CI_KEY_PASSWORD:-$CI_STORE_PASSWORD}
+          EOF
+          # 只确认写入，绝不回显文件内容（含密码）
+          test -s "$HOME/.lasrecomp/keystore.properties"
+
+      - name: 编译并签名 release APK
+        working-directory: android/lasrecomp
+        run: bash ./gradlew --no-daemon assembleRelease
+
+      - name: 校验版本号、字体与签名，整理产物
+        id: apk
+        env:
+          VERSION_NAME: ${{ steps.ver.outputs.name }}
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
+        run: |
+          set -euo pipefail
+          APK=android/lasrecomp/app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "::error::APK 未生成：$APK"; exit 1; }
+
+          # 产物里的 versionName / versionCode 必须与 version.properties 推出来的一致
+          META=android/lasrecomp/app/build/outputs/apk/release/output-metadata.json
+          GOT_NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["elements"][0]["versionName"])' "$META")
+          GOT_CODE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["elements"][0]["versionCode"])' "$META")
+          echo "APK versionName=$GOT_NAME versionCode=$GOT_CODE"
+          [ "$GOT_NAME" = "$VERSION_NAME" ] || { echo "::error::versionName 不一致：$GOT_NAME != $VERSION_NAME"; exit 1; }
+          [ "$GOT_CODE" = "$VERSION_CODE" ] || { echo "::error::versionCode 不一致：$GOT_CODE != $VERSION_CODE"; exit 1; }
+
+          # 中文字体是运行时从 assets 复制到 files/res 再读的（runtime/ui/font_cjk.h）：不在包里就只剩方块
+          unzip -l "$APK" | grep -q 'assets/res/fonts/ui-cjk.otf' \
+            || { echo "::error::assets/res/fonts/ui-cjk.otf 没有打进 APK（检查 sourceSets 的 assets.srcDirs）"; exit 1; }
+          echo "字体: $(unzip -l "$APK" | awk '/assets\/res\/fonts\/ui-cjk.otf/{print $1" bytes"}')"
+
+          APKSIGNER=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > /tmp/apksigner.txt
+          cat /tmp/apksigner.txt
+          # apksigner 各版本前缀不同（"V2 Signer:" / "Signer #1" 等），只锚定 digest 字段本身；去冒号与空白后小写
+          FP=$(awk -F'SHA-256 digest: ' '/certificate SHA-256 digest/{gsub(/:|[[:space:]]/,"",$2); print tolower($2); exit}' /tmp/apksigner.txt)
+          [ -n "$FP" ] || { echo "::error::无法从 apksigner 输出提取证书指纹"; exit 1; }
+          echo "证书 SHA-256: $FP"
+          grep -Eq 'Verified using (v2|v3) scheme.*: true' /tmp/apksigner.txt || { echo "::error::缺少 v2/v3 签名"; exit 1; }
+          [ "$FP" = "$EXPECTED_CERT_SHA256" ] || {
+            echo "::error::签名证书不匹配：期望 $EXPECTED_CERT_SHA256，实际 $FP"; exit 1; }
+          echo "::notice::固定签名校验通过，可覆盖安装"
+
+          mkdir -p dist
+          OUT="LASRecomp-$VERSION_NAME.apk"
+          cp "$APK" "dist/$OUT"
+          (cd dist && sha256sum "$OUT" > "$OUT.sha256")
+          { cat /tmp/apksigner.txt; echo; echo "证书 SHA-256: $FP";
+            echo "构建: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; } > dist/signature.txt
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+          echo "sha256=$FP" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LASRecomp-zh-${{ steps.ver.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: 发布 Release（仅 tag）
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION_NAME: ${{ steps.ver.outputs.name }}
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
+          BASE_NAME: ${{ steps.ver.outputs.base }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # 上一个汉化版 tag：写进说明里作为对比链接
+          TAGS=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+                 | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-zh\.[0-9]+$' | sort -V || true)
+          PREV=$(printf '%s\n' "$TAGS" | awk -v t="$TAG" '{ if ($0 == t) { print p; exit } p = $0 }') || true
+          cat > /tmp/notes.md <<EOF
+          **版本**：\`$VERSION_NAME\`（versionCode \`$VERSION_CODE\`），基于上游 \`$BASE_NAME\`。
+
+          **汉化范围**：应用自身的启动界面与设置菜单（简体 / 繁体中文），游戏内文本仍由游戏的语言选项控制。
+
+          **签名**：证书 SHA-256 \`$EXPECTED_CERT_SHA256\`（历次发布相同，可直接覆盖安装，存档保留）。
+
+          **安装**：\`adb install -r LASRecomp-$VERSION_NAME.apk\`，或直接点开 APK（Android 11+ / arm64-v8a，需 Vulkan 1.3）。
+          EOF
+          if [ -n "$PREV" ] && [ "$PREV" != "$TAG" ]; then
+            echo -e "\n**完整变更**：$GITHUB_SERVER_URL/$GH_REPO/compare/$PREV...$TAG" >> /tmp/notes.md
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "LAS Recomp 汉化版 $VERSION_NAME" --notes-file /tmp/notes.md
+          else
+            gh release create "$TAG" --title "LAS Recomp 汉化版 $VERSION_NAME" --notes-file /tmp/notes.md dist/*
+          fi
+          echo "::notice::https://github.com/$GH_REPO/releases/tag/$TAG"
+
+      - name: 交付说明
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 构建完成：${{ steps.ver.outputs.name }}（versionCode ${{ steps.ver.outputs.code }}）
+
+          - 文件：\`${{ steps.apk.outputs.name }}\` + \`.sha256\` + \`signature.txt\`
+          - 签名证书 SHA-256：\`${{ steps.apk.outputs.sha256 }}\`
+          - 下载：本 run 的 Artifacts${{ github.ref_type == 'tag' && '，或 Releases 页面' || '' }}
+          EOF

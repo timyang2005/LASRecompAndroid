@@ -1,27 +1,28 @@
 # 启动器中文化说明（LASRecompAndroid fork）
 
-本分支 `feat/zh-launcher` 把**启动器 / 应用界面**翻译成简体中文和繁体中文，依据
-[zh-launcher-i18n-plan.md](zh-launcher-i18n-plan.md) 的方案实施。**不改动游戏本体文本**：RomFS 自带中文，由游戏内的
-Language 选项控制，与界面语言是两套独立的设置。
+本分支 `feat/zh-launcher` 把**启动器 / 应用界面**翻译成简体中文和繁体中文。
+**不改动游戏本体文本**：RomFS 自带中文，由游戏内的 Language 选项控制，与界面语言是两套独立的设置。
+
+`main` 保持为上游 `mamcjr/LASRecompAndroid` 的纯镜像，所有改动都在 `feat/zh-launcher`，便于后续同步上游。
+构建与发版规范见 [`docs/CI-RELEASE.md`](CI-RELEASE.md)。
 
 ## 改动清单
 
 | 文件 | 改动 |
 |---|---|
-| `runtime/ui/i18n_zh_hans.inc` / `i18n_zh_hant.inc` | 新增。移植旧仓库 `29873f7` 的简繁各 891 条，补翻 262 条，遗漏复查再补 50 条并删去 2 条半句死键，共 **1201 条**，键逐条对齐 |
-| `runtime/ui/i18n.mm` | 新增两张中文表；`tr()` 改为按 `settings_ui_language()` 分派（中文 / 葡语 / 多语 / 英文回落）；新增 `i18n_cjk_text()` |
+| `runtime/ui/i18n_zh_hans.inc` / `i18n_zh_hant.inc` | 新增。简繁各 **878 条**，键逐条对齐。旧仓库移植 + 补翻 + 两轮遗漏复查，并清理了 323 条上游已改文案、运行时再也查不到的失效键 |
+| `runtime/ui/i18n.mm` | 新增两张中文表；`tr()` 按 `settings_ui_language()` 分派（中文 / 葡语 / 多语 / 英文回落）；新增 `i18n_cjk_text()` |
 | `runtime/ui/i18n.h` | 声明 `i18n_cjk_text()`；更新注释 |
 | `runtime/settings.h` / `.c` | 新增 `UI_LANG_*` 枚举、`g_ui_language_names`、`g_settings.ui_language`、`settings_ui_language()`；`larecomp.ini` 读写 `ui_language` |
-| `runtime/ui/font_cjk.h` | 新增。把手机系统 CJK 字体以 `MergeMode` 合并进每个刚加载的 ImGui 字体，字形范围按中文表逐字精确生成 |
-| `runtime/ui/launcher.mm` / `menu.mm` | 三档 / 四档字号后合并 CJK 字体；游戏内菜单新增「界面语言 / App language」选项 |
+| `runtime/ui/font_cjk.h` | 新增。把打包的 CJK 字体以 `MergeMode` 合并进每个刚加载的 ImGui 字体，字形范围按中文表逐字精确生成 |
+| `runtime/ui/launcher.mm` / `menu.mm` | 字号档位后合并 CJK 字体；游戏内菜单新增「界面语言 / App language」选项 |
 | `runtime/ui/inventory_overlay.mm` | 同伴卡片里 3 处直接 `AddText` 的英文（Companion / Choose / kShort[]）改为走 `tr()` |
-| `res/values-zh-rCN/strings.xml` / `values-zh-rTW/strings.xml` | 新增。Java 弹窗、快捷方式、通知渠道共 14 条 |
+| `res/values-zh-rCN/strings.xml` / `values-zh-rTW/strings.xml` | 新增。Java 弹窗、快捷方式、通知渠道共 14 条（与 `values/strings.xml` 逐条对应） |
+| `android/lasrecomp/app/src/main/assets/res/fonts/ui-cjk.otf` | 新增。Noto Sans CJK SC 子集（OFL 1.1），只含界面用到的字 |
 | `tools/i18n_check.py` | 新增。键对齐 / 重复键 / 格式符 / UTF-8 + **双基准覆盖率**（葡语表键 ∪ 源码 `tr()` 实际查表键） |
-| `.github/workflows/i18n.yml` | 新增。push/PR 跑中文表静态校验（不构建 APK） |
-| `.github/workflows/apk.yml` | 新增。编译并用固定密钥签名 release APK，详见 `docs/CI-APK.md` |
-| `android/lasrecomp/ci/lasrecomp-release.jks` | 新增。CI 固定签名密钥（公开、仅用于自测） |
-
-`main` 保持为上游 `mamcjr/LASRecompAndroid` 的纯镜像，所有改动都在 `feat/zh-launcher`，便于后续 rebase 上游更新。
+| `tools/font_coverage.py` | 新增。表里用到、但打包字体与 Baloo 2 都没有的字 → 构建失败 |
+| `android/lasrecomp/version.properties` | 新增。版本号唯一来源，见 `docs/CI-RELEASE.md` |
+| `.github/workflows/android-apk.yml` / `i18n-check.yml` | 新增。构建签名发版 / 静态校验 |
 
 ## 语言判定
 
@@ -37,83 +38,78 @@ Language 选项控制，与界面语言是两套独立的设置。
 | 其他语言、桌面构建 | 英文（保持原行为） |
 
 测试可用环境变量覆盖系统语言：`LARECOMP_HOST_LANG=zh`、`zh-TW`、`zh-HK`、`pt`、`en` 等。
-注意 `settings_host_portuguese()` / `settings_host_language()` 仍保留，但改为复用同一个判定，不再各自读一次 locale。
+`settings_host_portuguese()` / `settings_host_language()` 仍保留（旧调用点用），但改为复用同一个判定，不再各自读一次 locale。
 
 ## 字体（不做会全是豆腐块）
 
 启动器主字体 Baloo 2 只含 ASCII。`ui_merge_cjk_font()` 在每个 `AddFontFromFileTTF` **之后立即**调用
-（ImGui 的 `MergeMode` 把新字体字形合并进前一个字体），依次尝试：
+（ImGui 的 `MergeMode` 把新字体字形合并进前一个字体），字体来源按优先级：
 
-```
-/system/fonts/NotoSansCJK-Regular.ttc
-/system/fonts/NotoSansSC-Regular.otf
-/system/fonts/NotoSansSC-VF.ttf
-/system/fonts/NotoSansCJKsc-Regular.otf
-/system/fonts/MiSans-Regular.ttf        # 小米 HyperOS / MIUI 用 MiSans，没有 Noto
-/system/fonts/MiSansVF.ttf
-/system/fonts/DroidSansFallback.ttf
-/system/fonts/NotoSansCJK-Regular.otf
-```
+1. **APK 自带** `assets/res/fonts/ui-cjk.otf`（Noto Sans CJK SC 子集，292 KB，OFL 1.1）。
+   Java 侧把 `assets/res` 复制到 `files/res` 并 `setenv("LARECOMP_RES_DIR", ...)`，native 从这里读；
+2. 系统字体兜底（`/system/fonts/NotoSansCJK-Regular.ttc`、`MiSans-Regular.ttf` 等），但**必须先过 `sfnt_ok()`**：
+   ROM 字体可能被裁剪 / 虚拟化成 stb_truetype 解析不了的形态，release 构建里 ImGui 的断言是空的，会直接 SIGSEGV。
+   不合格的字体直接跳过，中文退化成方块但不会崩；
+3. `LARECOMP_CJK_FONT=<path>` 可指定其它字体用于测试。
 
-`LARECOMP_CJK_FONT=<path>` 可指定其它字体用于测试。字形范围由 `i18n_cjk_text()` 中的非 ASCII 字符**逐字**生成
-`{cp, cp, ...}` 精确范围（约 1.3k 个码点），不是整段 Unicode 区间，避免图集被无关汉字撑大。设备上找不到 CJK 字体时
-保持英文 / 葡语原样，不会崩溃。
+字形范围由 `i18n_cjk_text()` 中的非 ASCII 字符**逐字**生成 `{cp, cp, ...}` 精确范围（约 1.3k 个码点），
+不是整段 Unicode 区间，避免图集被无关汉字撑大。
 
 ### 字号上限（不做会启动即闪退）
 
-中文表实际用到 **1339 个不同字符**（简繁合并去重）。启动器三档字号是 52.5 / 96.2 / **211.6**（`92 * 2.3`）。
-三档都合并这 1339 个字形的话，仅标题档就需约 61M px，ImGui 最终产出 **4096×32768** 的图集（`TEX_HEIGHT_MAX`），
-转 RGBA32 约 **537 MB**，远超手机 GPU 的 `GL_MAX_TEXTURE_SIZE`（通常 8192 / 16384）。纹理上传失败，
-应用在**第一帧就崩** —— `0.5.10-2` 的闪退正是这个原因。
+中文表实际用到 **1323 个不同字符**（简繁合并去重）。启动器三档字号是 52.5 / 96.2 / **211.6**（`92 * 2.3`）。
+三档都合并的话，仅标题档就需约 61M px，ImGui 最终产出 **4096×32768** 的图集（`TEX_HEIGHT_MAX`），
+转 RGBA32 约 **537 MB**，远超手机 GPU 的 `GL_MAX_TEXTURE_SIZE`（通常 8192 / 16384）。
 
-因此 `CJK_MAX_PX = 80`：超过 80px 的档位按 80px 栅格化、再由 ImGui 放大（`ImFontConfig::SizePixels`），
-`OversampleH/V` 固定为 1（默认的 3 会让字形宽三倍）。修复后：
+因此 `CJK_MAX_PX = 80`：超过 80px 的档位按 80px 栅格化、再由 ImGui 放大，`OversampleH/V` 固定为 1。
+标题档 211.6px **不合并**——它只画 `LAS Recompiled`，英文。修复后：
 
 | 图集 | 档位（px） | 尺寸 | RGBA |
 |---|---|---|---|
-| 启动器 | 52.5 / 80 / 80 | 4096×8192 | 134 MB |
-| 游戏内菜单 | 34 / 39 / 56 / 72（均未超限） | 4096×4096 | 67 MB |
+| 启动器 | 52.5 / 80 | 2048×4096 | 32 MB |
+| 游戏内菜单 | 34 / 39 / 56 / 72（均未超限） | 2048×4096 | 32 MB |
 
-代价是标题行的中文比 211px 的拉丁字母小；菜单项（96→80）几乎看不出差别。合并过程写 logcat，便于现场核对：
+合并过程写 logcat，便于现场核对：
 
 ```bash
 adb logcat -s LASRecompCJK
-# [cjk] font=/system/fonts/MiSans-Regular.ttf glyphs=1339
-# [cjk] merge requested=211.6 actual=80.0 glyphs=1339 ok
+# [cjk] font=.../files/res/fonts/ui-cjk.otf bytes=... glyphs=1323
+# [cjk] merge requested=211.6 actual=80.0 glyphs=1323 ok
 ```
 
 ## 明确不动的部分
 
 - 游戏文本语言（`g_settings.language`、`g_language_codes`、游戏内 Language 选项、RomFS）；
 - 游戏 Mod / 汉化补丁、存档数据；
-- 上游 README 中的 Releases / Issues / 赞助链接（仍指向 `mamcjr`，本 fork 未开启 Issues）；
+- 上游 README 中的 Releases / Issues / 赞助链接；
 - Java 侧纯技术性日志文本。面向用户的弹窗已在 `strings.xml` 中文化；由 Java 回传给原生层显示的**固定完整句**
-  （`nativeSaveTransferDone` / `nativeImportFailure`）走 `tr()` 查表，已补入中文表（见下节）。
+  （`nativeSaveTransferDone` / `nativeImportFailure`）走 `tr()` 查表，已补入中文表。
 
-## 遗漏复查（第二轮）
+## 译文维护
 
-首轮只以葡语表 / 多语表的 601 个键作为「英文基准」，会漏掉上游葡语表本身没收的界面文本。第二轮改为
-**从源码直接提取 `tr()` / `opt_*` 真正传入的字符串**（含 C 相邻字符串拼接后的完整串），逐类核对，补了 50 条、
-删了 2 条错误键：
+`tr()` 按英文原文**精确**查表（大小写、空格、标点都要一致），所以上游改一句文案，旧译文就查不到了。
+`tools/i18n_check.py` 把「葡语表 ∪ 多语表 ∪ 源码里 `tr()/opt_*/header/hint/choice/toggle` 真正传入的字面量」
+合并成必须覆盖的键集合，任何一条没译文都会让 CI 失败：
 
-| 类别 | 发现 | 处理 |
-|---|---|---|
-| C 相邻拼接长串 | `Sets up another release…`、`Frees the space that release takes…`、`menu.mm` 桌面版帧率说明：源码把 4 段拼成 1 个 `desc`，旧中文表存的是**首段片段**（译文也只翻了半句），运行时拿完整串查表必然落空 | 删 2 条半句死键，按源码精确提取的完整串（含 `‹ ›`）重新翻译 3 条 |
-| 选项名 / 标签 | `Mods`、`Marin`、`BowWow`、`Rooster`、`60 fps`、`120 Hz` 是 `opt_choice` 的 `names[]` 或标签数组元素，helper 内部 `tr(names[i])` 会查表，但葡语表未收录 | 补 6 条 |
-| 启动器状态 / 错误提示 | `set_job("Copying the game data image...")`、`NewStringUTF(...)` 回传的 romfs 复制 / 就地使用失败文案，最终经 `tr(job)` / `tr(job_hint)` 显示 | 补 10 条 |
-| Java 回传固定句 | `nativeImportFailure` / `nativeSaveTransferDone` 的完整句（权限提示、存档校验失败等） | 补 19 条 |
-| 直接绘制的英文 | `inventory_overlay.mm` 同伴卡片的 `Companion`、`Choose`、`kShort[]` 直接 `AddText`，根本没包 `tr()` | 源码加 `#include "i18n.h"` 并包 `tr()` |
-| 品牌 / 技术名 / 格式串 | `Nintendo`、`AMD FSR 1`、`%d / 32` 等本来就应保留英文 | 显式登记为「译文 = 原文」，使严格覆盖检查无需白名单 |
+```
+简体表 878 条 / 繁体表 878 条
+必须覆盖的键 599 个：中文表命中 599，缺 0
+源码界面文本 427 个键：中文表命中 427，缺 0
+[OK] 键对齐、无重复、格式符一致、UTF-8 有效
+```
 
-同时加固 `tools/i18n_check.py`：修正 `\xNN` 十六进制转义解码（源码里的 `‹ ›`），并把**源码界面文本 426 个键**
-纳入必须覆盖集合；葡语表里 2 条运行时查不到的拼接片段登记为 `DEAD_KEYS`。此后上游新增 UI 文案而未翻译，
-CI 会直接失败。当前结果：简繁各 1201 条，葡语表基准 599/599、源码基准 426/426，全绿。
+维护要点：
+
+- 上游新增界面文案 → 跑 `python tools/i18n_check.py`，缺的键会列出来（`--missing-out` 可写文件）；
+- 新增译文里出现新字 → 跑 `python tools/font_coverage.py`，缺字形会失败；重建子集命令在脚本头部注释；
+- 只有中文表收录、源码里已经不存在的键会被当成「死键」清理掉——上一轮已清 323 条
+  （旧仓库移植时带的、上游后来改写过的文案）。
 
 ## 验证
 
 ```bash
-python3 tools/i18n_check.py            # 键对齐 / 重复 / 格式符 / 双基准覆盖率 / UTF-8
-python3 tools/i18n_check.py --missing-out /tmp/missing.txt
+python tools/i18n_check.py
+python tools/font_coverage.py
 ```
 
 真机 / 模拟器验证项：
@@ -124,26 +120,14 @@ python3 tools/i18n_check.py --missing-out /tmp/missing.txt
 - Java 弹窗（导入存档、驱动错误、快捷方式）为中文；
 - 游戏内文本仍由游戏 Language 选项控制，未被改动。
 
-## 构建与 CI
-
-APK 需要 Windows Git Bash 或 Linux + Android SDK：**NDK `30.0.16248370`、CMake `3.30.4`、Python 3.12**，步骤见
-README 的 *Building from source*（`android/deps/build_deps.sh` 等）。CI 拆成两个工作流：`i18n.yml` 在 ubuntu-latest
-上跑中文表静态校验（必定可用）；`apk.yml` 编译并用**固定密钥**签名 release APK，产物可直接安装、可覆盖升级，
-详见 [`docs/CI-APK.md`](CI-APK.md)。
-
 ## 已知限制
 
 1. **Java 资源跟随系统语言**：应用内手动选择界面语言只影响原生层，Java 弹窗仍按系统语言选资源。若要完全对齐，
    可在 Android 13+ 调用 `LocaleManager.setApplicationLocales`。
-2. **字体图集**：三档大字号合并全部汉字时图集可能较大；若标题档超限，可去掉 `launcher.mm` 中 `g_font_title` 的
-   `ui_merge_cjk_font` 调用，标题回落到系统字体。
-3. **键必须逐字匹配**：`tr()` 按英文原文精确查表，标点 / 空格 / 大小写不同都会回落英文，改动 UI 文案后请重跑
-   `i18n_check.py`。
-4. ImGui ID 不受影响：`option_rows.mm` / `menu.mm` 用英文原串 `PushID(label)`，切换语言不会改变控件 ID。
-5. **Java 动态拼接的错误文案仍为英文**：`SaveTransfer.java` / `ImportStorage.java` 里
-   `"Could not open " + name`、`"Save transfer failed: " + e`、`String.format(...)` 生成的整串会作为
-   `job_hint` / `g_save_msg` 传给 `tr()`，但键里含运行时才有的文件名或数字，无法用固定键命中。
-   这些是低频错误详情。要完全覆盖需把 Java 异常消息体系改为资源字符串（`getString(R.string.xxx, args)`），
-   因 `SaveTransfer` 是刻意不依赖 Android 的纯 Java 类，本次未改动，避免破坏其可测试性。
-6. **性能叠加层（perf_overlay.mm）保留英文**：属于调试用 HUD，几乎全是 `FPS %.0f`、`RAM %u MB` 这类
-   格式串与技术缩写，不做翻译。
+2. **字体图集**：启动器两个档位合并后 2048×4096 / 32 MB（上游无中文时 8 MB）；若某机型超限，可去掉
+   `menu.mm` 里 `g_menu_font_big` 的 `ui_merge_cjk_font` 调用，大字回落到系统字体。
+3. **Java 动态拼接的错误文案仍为英文**：`SaveTransfer.java` / `ImportStorage.java` 里
+   `"Could not open " + name`、`String.format(...)` 生成的整串会作为 `job_hint` / `g_save_msg` 传给 `tr()`，
+   键里含运行时才有的文件名或数字，无法用固定键命中。要完全覆盖需把异常消息体系改成资源字符串。
+4. **性能叠加层（perf_overlay.mm）保留英文**：调试用 HUD，几乎全是 `FPS %.0f`、`RAM %u MB` 这类格式串与技术缩写。
+5. ImGui ID 不受影响：`option_rows.mm` / `menu.mm` 用英文原串 `PushID(label)`，切换语言不会改变控件 ID。

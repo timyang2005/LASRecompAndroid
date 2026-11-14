@@ -755,8 +755,8 @@ static void tab_about(void) {
     {
         // The app's own menus and the start screen, at once; Auto follows the phone's language (settings_ui_language).
         if (choice("App language", &g_settings.ui_language, g_ui_language_names, N_UI_LANGUAGES)) settings_save();
-        hint("The interface changes immediately. Auto follows the effective game language; languages without a "
-             "UI translation use English.");
+        hint("The app's menus and the start screen change at once. Auto follows the phone's language; a language "
+             "without a UI translation uses English.");
     }
     ImGui::Spacing();
     header("Controls");
