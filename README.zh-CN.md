@@ -33,7 +33,7 @@ adb install -r LASRecomp-0.5.11-zh.1.apk   # 覆盖安装，存档保留
 
 所以版本号只会变大，每个新版本都能直接覆盖旧版本，不需要卸载。
 每次发布都用同一把密钥签名（证书 SHA-256 `f00f7ebe8bb0d960a74399db2d4a8fba5fe13d5448dd2a662c945a896a2f4cff`），
-签名不一致时 Android 会拒绝升级——看到签名不同，说明包不是这个分支发的。
+签名不一致时 Android 会拒绝升级；签名只能说明包出自同一把密钥，不具备身份鉴别作用（见 [docs/CI-RELEASE.md](docs/CI-RELEASE.md)）。
 
 ## 汉化范围
 
