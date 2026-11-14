@@ -1615,6 +1615,9 @@ const char *vk_gpu_name(void) { return g_vk.props.deviceName; }
 void ui_window_init(void) {
     if (window) return;
     atexit(quick_exit_handler);
+#ifdef __ANDROID__
+    at_quick_exit(quick_exit_handler);  // (plat_quit: the first registered, so the last run - it ends the process)
+#endif
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 #ifdef __ANDROID__
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");  // (the back button opens the menu: ui/touch_controls.mm)
@@ -1623,9 +1626,7 @@ void ui_window_init(void) {
 #ifdef __ANDROID__
     {   // Driver compatibility (the start screen's Saves & files tab): applied before the driver loads
         extern void android_log_file(bool on);
-        // (Android, always: a crash before the settings are reachable would otherwise leave nothing behind; the file is
-        // <data>/lasrecomp.log and the previous run's is renamed lasrecomp-previous.log on the next start)
-        android_log_file(true);
+        android_log_file(g_settings.log_file);
         // Turnip reads TU_DEBUG once, when it starts: low-resolution Z off (it can drop draws on some Adreno GPUs).
         // Automatic needs the GPU before Vulkan names it: the kernel's (the GPU driver reads it from the app too), else
         // the last start's; unknown: on.
@@ -1805,7 +1806,7 @@ int ui_run(void) {
 #endif
             if (e.type == SDL_EVENT_QUIT) {
                 LOG("window closed\n");
-                exit(0);
+                plat_quit();
             }
             extern bool input_user_blocked(const SDL_Event *e);
             if (input_user_blocked(&e)) continue;  // scripted test runs: the real keyboard / mouse / pads do nothing (as metal.m)

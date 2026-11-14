@@ -6,9 +6,27 @@ plugins {
 }
 
 val repo: File = rootDir.resolve("../..").canonicalFile
-val lasCjkMode: String = (project.findProperty("lasCjkMode") as String?) ?: "1"  // (see defaultConfig)
 val deps: File = repo.resolve("android/deps/out")  // android/deps/build_deps.sh
 val gen = layout.buildDirectory.dir("generated/lasrecomp")
+
+// The fork's release version, in one place: android/lasrecomp/version.properties.
+//   baseName / baseCode = the upstream release this branch builds on (upstream sets them in this file's
+//                         defaultConfig; they are copied here when main is fast-forwarded to a new upstream)
+//   forkRev             = this fork's own revision on top of that base, bumped per release
+// versionName 0.5.11-zh.1, versionCode 27*100+1 = 2701: the code only goes up, across upstream bases too
+// (0.5.11-zh.2 = 2702, 0.5.12-zh.1 = 2801), so an installed APP is always replaced by a newer release.
+// CI (.github/workflows/android-apk.yml) refuses a tag that does not match this computed version.
+val versionFile = rootDir.resolve("version.properties")  // android/lasrecomp/version.properties
+val versionProps = Properties().apply {
+    require(versionFile.exists()) { "android/lasrecomp/version.properties is missing" }
+    versionFile.inputStream().use { load(it) }
+}
+val lasBaseName: String = versionProps.getProperty("baseName")
+val lasBaseCode: Int = versionProps.getProperty("baseCode").toInt()
+val lasForkRev: Int = versionProps.getProperty("forkRev").toInt()
+val lasVersionName = "$lasBaseName-zh.$lasForkRev"
+val lasVersionCode = lasBaseCode * 100 + lasForkRev
+
 // The release key: outside the repository, in ~/.lasrecomp/keystore.properties (storeFile, storePassword, keyAlias,
 // keyPassword); without it, release builds are signed with the debug key
 val releaseKey: File = File(System.getProperty("user.home"), ".lasrecomp/keystore.properties")
@@ -22,10 +40,8 @@ android {
         applicationId = "com.lasrecomp.android"
         minSdk = 30
         targetSdk = 36
-        versionCode = 28
-        // -PlasCjkMode bisects a crash in the CJK font merge (runtime/ui/font_cjk.h, apk-diag.yml):
-        // 0 = translate but never merge, 2 = one small face, 1 (default) = normal.
-        versionName = "0.5.10" + when (lasCjkMode) { "0" -> "-zh6a"; "2" -> "-zh6b"; else -> "-zh6" }
+        versionCode = lasVersionCode
+        versionName = lasVersionName
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -33,7 +49,6 @@ android {
             cmake {
                 arguments += "-DLAS_GEN_DIR=${gen.get().asFile.resolve("inc").absolutePath.replace('\\', '/')}"
                 arguments += "-DLAS_APP_VERSION=$versionName"  // (the start screen shows it: launcher.mm)
-                arguments += "-DLAS_CJK_MODE=$lasCjkMode"
             }
         }
     }
